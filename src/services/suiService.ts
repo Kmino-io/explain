@@ -13,25 +13,103 @@ const getRpcUrl = () => {
   return 'https://fullnode.mainnet.sui.io:443'
 }
 
-const client = new SuiClient({ 
+// Fallback RPC endpoints in case primary fails
+const FALLBACK_RPC_URLS = [
+  'https://fullnode.mainnet.sui.io:443',
+  'https://sui-mainnet-rpc.nodereal.io',
+  'https://sui-mainnet.nodeinfra.com',
+]
+
+let client = new SuiClient({ 
   url: getRpcUrl()
 })
 
+// Function to try alternative RPC endpoints
+async function tryAlternativeEndpoint(): Promise<boolean> {
+  // Only try alternatives in production
+  if (import.meta.env.DEV) return false
+  
+  for (const url of FALLBACK_RPC_URLS) {
+    try {
+      console.log(`Trying alternative RPC endpoint: ${url}`)
+      const testClient = new SuiClient({ url })
+      // Quick health check
+      await withTimeout(
+        testClient.getLatestSuiSystemState(),
+        5000,
+        'Health check timeout'
+      )
+      console.log(`Successfully connected to ${url}`)
+      client = testClient
+      return true
+    } catch (error) {
+      console.warn(`Failed to connect to ${url}:`, error)
+    }
+  }
+  return false
+}
+
+// Helper function to add timeout to any promise
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+    ),
+  ])
+}
+
+// Retry logic with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      console.log(`Attempt ${i + 1}/${maxRetries}...`)
+      return await fn()
+    } catch (error) {
+      lastError = error as Error
+      console.warn(`Attempt ${i + 1} failed:`, error instanceof Error ? error.message : error)
+      
+      // Don't retry on the last attempt
+      if (i < maxRetries - 1) {
+        const delay = initialDelay * Math.pow(2, i)
+        console.log(`Retrying in ${delay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+  
+  throw lastError || new Error('All retry attempts failed')
+}
+
 export async function fetchTransactionDetails(digest: string): Promise<ParsedTransaction> {
+  let attemptedFallback = false
+  
   try {
     console.log('Fetching transaction:', digest)
     
-    // Fetch transaction block
-    const txBlock = await client.getTransactionBlock({
-      digest: digest,
-      options: {
-        showInput: true,
-        showEffects: true,
-        showEvents: true,
-        showObjectChanges: true,
-        showBalanceChanges: true,
-      },
-    })
+    // Fetch transaction block with retry logic and timeout
+    const txBlock = await retryWithBackoff(async () => {
+      return await withTimeout(
+        client.getTransactionBlock({
+          digest: digest,
+          options: {
+            showInput: true,
+            showEffects: true,
+            showEvents: true,
+            showObjectChanges: true,
+            showBalanceChanges: true,
+          },
+        }),
+        20000, // 20 second timeout for main transaction fetch
+        'Transaction fetch timed out after 20 seconds'
+      )
+    }, 3, 2000) // 3 retries with 2 second initial delay
 
     console.log('Transaction fetched successfully, attempting enrichment...')
 
@@ -52,7 +130,32 @@ export async function fetchTransactionDetails(digest: string): Promise<ParsedTra
     return parsed
   } catch (error) {
     console.error('Error fetching transaction:', error)
-    if (error instanceof Error && error.message) {
+    
+    // Try alternative endpoints if available (production only)
+    if (!attemptedFallback && !import.meta.env.DEV) {
+      attemptedFallback = true
+      console.log('Attempting to use alternative RPC endpoint...')
+      const switched = await tryAlternativeEndpoint()
+      if (switched) {
+        console.log('Retrying with alternative endpoint...')
+        return fetchTransactionDetails(digest) // Recursive call with new endpoint
+      }
+    }
+    
+    // Provide more helpful error messages
+    if (error instanceof Error) {
+      if (error.message.includes('504') || error.message.includes('timeout') || error.message.includes('Timeout')) {
+        throw new Error('⏱️ The Sui network is slow to respond. Please try again in a moment. If the issue persists, the transaction ID might be incorrect.')
+      }
+      if (error.message.includes('404') || error.message.includes('not found')) {
+        throw new Error('❌ Transaction not found. Please check the transaction ID and try again.')
+      }
+      if (error.message.includes('429')) {
+        throw new Error('⚠️ Rate limit exceeded. Please wait a moment and try again.')
+      }
+      if (error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
+        throw new Error('🌐 Cannot connect to Sui network. Please check your internet connection.')
+      }
       throw new Error(`Failed to fetch transaction: ${error.message}`)
     }
     throw new Error('Failed to fetch transaction: Unknown error')
@@ -159,15 +262,7 @@ function parseTransaction(txBlock: any): ParsedTransaction {
       const isNFT = isNFTObject(change.objectType, enrichedData)
       const nftMetadata = isNFT ? extractNFTMetadata(enrichedData) : undefined
       
-      // Debug logging
-      console.log('Created object:', {
-        objectId: change.objectId,
-        objectType: change.objectType,
-        isNFT,
-        hasEnrichedData: !!enrichedData,
-        hasDisplay: !!enrichedData?.data?.display?.data,
-        hasContent: !!enrichedData?.data?.content?.fields,
-      })
+      const fullAddr = getFullAddress(change.owner)
       
       objectsCreated.push({
         objectId: change.objectId,
@@ -175,6 +270,7 @@ function parseTransaction(txBlock: any): ParsedTransaction {
         version: change.version,
         digest: change.digest,
         owner: formatOwner(change.owner),
+        fullOwnerAddress: fullAddr,  // Store full address
         isNFT,
         nftMetadata,
       })
@@ -272,7 +368,18 @@ function parseTransaction(txBlock: any): ParsedTransaction {
   // Map sender first
   getOrCreateUserLabel(sender)
   
-  // Map all involved addresses
+  // Map owners of created objects (for NFT recipients)
+  for (const created of objectsCreated) {
+    if (created.isNFT && created.fullOwnerAddress && 
+        created.fullOwnerAddress !== 'Unknown' && 
+        created.fullOwnerAddress !== 'Shared' && 
+        created.fullOwnerAddress !== 'Immutable' &&
+        !created.fullOwnerAddress.startsWith('Object(')) {
+      getOrCreateUserLabel(created.fullOwnerAddress)
+    }
+  }
+  
+  // Map all involved addresses in transfers
   for (const transfer of objectsTransferred) {
     const fromAddr = txBlock.objectChanges?.find((c: any) => 
       c.objectId === transfer.objectId && c.type === 'transferred'
@@ -319,6 +426,17 @@ function parseTransaction(txBlock: any): ParsedTransaction {
     packageCalls,
     balanceChanges,
     addressToUser,
+    rawObjectChanges: txBlock.objectChanges,
+  })
+
+  // Generate detailed breakdown
+  const aiBreakdown = generateAIBreakdown({
+    sender,
+    objectsCreated,
+    objectsTransferred,
+    packageCalls,
+    addressToUser,
+    rawObjectChanges: txBlock.objectChanges,
   })
 
   return {
@@ -336,6 +454,7 @@ function parseTransaction(txBlock: any): ParsedTransaction {
     summary: summaryData.summary,
     userAddressMap: summaryData.userAddressMap,
     aiSummary,
+    aiBreakdown,
     rawEffects: effects,
   }
 }
@@ -369,6 +488,11 @@ function generateSummary(data: any): { summary: string[], userAddressMap: Map<st
   const summary: string[] = []
   const userAddressMap = new Map<string, string>()
   
+  // Pre-populate userAddressMap from addressToUser (inverted: label → address)
+  for (const [address, label] of data.addressToUser.entries()) {
+    userAddressMap.set(label, address)
+  }
+  
   // Helper to get user label
   const getUserLabel = (address: string): string => {
     if (!address || address === 'Unknown') return 'Unknown'
@@ -376,7 +500,7 @@ function generateSummary(data: any): { summary: string[], userAddressMap: Map<st
     // Check if we have a mapping
     for (const [addr, label] of data.addressToUser.entries()) {
       if (addr === address) {
-        userAddressMap.set(label, address)
+        // Already added above, just return label
         return label
       }
     }
@@ -565,6 +689,12 @@ function isNFTObject(objectType: string, objectData?: any): boolean {
   // Skip if it's a coin
   if (objectType.includes('coin::Coin')) return false
   
+  // Skip dynamic_field objects (these are internal data structures, not NFTs)
+  if (objectType.includes('::dynamic_field::') || objectType.includes('::dynamic_object_field::')) {
+    console.log('Skipping dynamic field (not an NFT):', objectType)
+    return false
+  }
+  
   // Check for display metadata (strong indicator of NFT)
   if (objectData?.data?.display?.data) {
     console.log('NFT detected via display metadata:', objectType)
@@ -587,6 +717,8 @@ function isNFTObject(objectType: string, objectData?: any): boolean {
     '::character::',
     '::card::',
     '::badge::',
+    '::license::',  // For license types
+    '::License',    // Capital L version
   ]
   
   if (nftPatterns.some(pattern => objectType.includes(pattern))) {
@@ -598,8 +730,11 @@ function isNFTObject(objectType: string, objectData?: any): boolean {
   const content = objectData?.data?.content?.fields
   if (content && (content.name || content.image_url || content.url || content.description)) {
     // Has NFT-like metadata but not a coin
-    console.log('NFT detected via content fields:', objectType)
-    return true
+    // But NOT if it's a dynamic field
+    if (!objectType.includes('::dynamic_field::')) {
+      console.log('NFT detected via content fields:', objectType)
+      return true
+    }
   }
   
   return false
@@ -623,13 +758,46 @@ function extractNFTMetadata(objectData?: any): { name?: string, description?: st
   
   if (!display && !content) return undefined
   
+  // Helper to convert values to readable strings
+  const valueToString = (value: any): string => {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    if (typeof value === 'object') {
+      // Try to extract meaningful data from objects
+      if (Array.isArray(value)) return value.join(', ')
+      if (value.toString && value.toString() !== '[object Object]') return value.toString()
+      // For complex objects, try to get a meaningful field or stringify
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return '[Complex Object]'
+      }
+    }
+    return String(value)
+  }
+  
+  // Filter out technical/internal fields that aren't real attributes
+  const excludedFields = [
+    'id', 'name', 'description', 'image_url', 'img_url', 'url', 
+    'value', 'balance', 'type', 'owner', 'version', 'digest'
+  ]
+  
   return {
     name: display?.name || content?.name || 'NFT',
     description: display?.description || content?.description,
     imageUrl: display?.image_url || display?.img_url || content?.image_url || content?.url,
     attributes: content ? Object.entries(content)
-      .filter(([key]) => !['id', 'name', 'description', 'image_url', 'url'].includes(key))
-      .reduce((acc, [key, value]) => ({ ...acc, [key]: String(value) }), {})
+      .filter(([key]) => !excludedFields.includes(key.toLowerCase()))
+      .filter(([_, value]) => value !== null && value !== undefined)
+      .reduce((acc, [key, value]) => {
+        const strValue = valueToString(value)
+        // Only include if it's not an empty string and not too long
+        if (strValue && strValue.length > 0 && strValue.length < 100) {
+          return { ...acc, [key]: strValue }
+        }
+        return acc
+      }, {} as Record<string, string>)
       : undefined,
   }
 }
@@ -659,6 +827,162 @@ function extractTypeName(fullType: string): string {
   return withoutGenerics || 'Object'
 }
 
+function generateAIBreakdown(data: any): string[] {
+  // Generate a detailed step-by-step breakdown of what happened
+  const breakdown: string[] = []
+  
+  // Helper to get user label
+  const getUserLabel = (address: string): string => {
+    if (!address || address === 'Unknown') return 'Unknown'
+    for (const [addr, label] of data.addressToUser.entries()) {
+      if (addr === address) return label
+    }
+    return truncateAddress(address)
+  }
+  
+  const getFullAddress = (owner: any): string => {
+    if (!owner) return 'Unknown'
+    if (typeof owner === 'string') return owner
+    if (owner.AddressOwner) return owner.AddressOwner
+    if (owner.ObjectOwner) return owner.ObjectOwner
+    if (owner.Shared) return 'Shared'
+    if (owner.Immutable) return 'Immutable'
+    return 'Unknown'
+  }
+  
+  // Helper to check if NFT is "relevant" (has proper metadata/name)
+  const isRelevantNFT = (nft: any): boolean => {
+    const name = nft.nftMetadata?.name || ''
+    const objectType = nft.objectType || ''
+    
+    // Filter out generic/temporary NFTs
+    if (!name || name.toLowerCase().includes('unknown')) return false
+    if (objectType.toLowerCase().includes('temp') || objectType.toLowerCase().includes('placeholder')) return false
+    
+    return true
+  }
+  
+  const senderLabel = getUserLabel(data.sender)
+  
+  // Step 1: Package calls (what functions were called)
+  if (data.packageCalls && data.packageCalls.length > 0) {
+    // Filter to unique and important calls
+    const importantCalls = data.packageCalls.filter((call: any) => {
+      // Skip generic transfer/split coin calls
+      return !call.function.includes('transfer') && 
+             !call.function.includes('split_coin') &&
+             !call.function.includes('pay')
+    })
+    
+    if (importantCalls.length > 0) {
+      for (const call of importantCalls.slice(0, 3)) { // Max 3 calls
+        breakdown.push(`{{${senderLabel}}} called {{${call.module}::${call.function}}}`)
+      }
+    }
+  }
+  
+  // Step 2: NFTs created (minted) - only relevant ones
+  const nftsCreated = (data.objectsCreated?.filter((obj: any) => obj.isNFT && isRelevantNFT(obj)) || [])
+  const nftTransfers = (data.objectsTransferred?.filter((t: any) => t.isNFT && isRelevantNFT(t)) || [])
+  
+  if (nftsCreated.length > 0) {
+    // Check which NFTs were created AND transferred
+    const createdNFTIds = new Set(nftsCreated.map((nft: any) => nft.objectId))
+    const mintedAndTransferred = nftTransfers.filter((t: any) => createdNFTIds.has(t.objectId))
+    
+    // Group NFTs by collection
+    const collectionMap = new Map<string, any[]>()
+    for (const nft of nftsCreated) {
+      let collectionName = 'NFT'
+      
+      if (nft.nftMetadata?.name) {
+        const name = nft.nftMetadata.name
+        // Extract collection name (text before #, number, or other delimiter)
+        const splitByHash = name.split('#')[0]
+        const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+        collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+      }
+      
+      if (!collectionMap.has(collectionName)) {
+        collectionMap.set(collectionName, [])
+      }
+      collectionMap.get(collectionName)!.push(nft)
+    }
+    
+    // Show minting by collection - only if collection name is valid
+    for (const [collectionName, nfts] of collectionMap.entries()) {
+      // Skip if collection name looks like an object ID
+      if (collectionName.startsWith('0x') && collectionName.length > 50) {
+        continue
+      }
+      
+      if (nfts.length === 1) {
+        const nftName = nfts[0].nftMetadata?.name || 'NFT'
+        // Skip if name looks like an object ID
+        if (nftName.startsWith('0x') && nftName.length > 50) {
+          continue
+        }
+        breakdown.push(`{{${nftName}}} was minted`)
+      } else {
+        breakdown.push(`{{${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}}} were minted`)
+      }
+    }
+  }
+  
+  // Step 3: NFT transfers - only show transfers to non-sender recipients
+  if (nftTransfers.length > 0) {
+    // Group by sender and recipient
+    const transferMap = new Map<string, { from: string, to: string, nfts: any[] }>()
+    
+    for (const transfer of nftTransfers) {
+      const rawChange = data.rawObjectChanges?.find((c: any) => 
+        c.objectId === transfer.objectId && c.type === 'transferred'
+      )
+      const fromAddr = rawChange ? getFullAddress(rawChange.sender) : transfer.from
+      const toAddr = rawChange ? getFullAddress(rawChange.recipient) : transfer.to
+      const fromLabel = getUserLabel(fromAddr)
+      const toLabel = getUserLabel(toAddr)
+      
+      // Skip transfers to the sender themselves (internal transfers)
+      if (toAddr === data.sender) continue
+      
+      const key = `${fromLabel}->${toLabel}`
+      if (!transferMap.has(key)) {
+        transferMap.set(key, { from: fromLabel, to: toLabel, nfts: [] })
+      }
+      transferMap.get(key)!.nfts.push(transfer)
+    }
+    
+    // Show transfers
+    for (const { from, to, nfts } of transferMap.values()) {
+      if (nfts.length === 1) {
+        const nftName = nfts[0].nftMetadata?.name || 'NFT'
+        breakdown.push(`{{${nftName}}} transferred from {{${from}}} to {{${to}}}`)
+      } else {
+        // Extract collection name properly
+        let collectionName = 'NFT'
+        
+        if (nfts[0].nftMetadata?.name) {
+          const name = nfts[0].nftMetadata.name
+          const splitByHash = name.split('#')[0]
+          const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+          collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+        }
+        
+        breakdown.push(`{{${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}}} transferred from {{${from}}} to {{${to}}}`)
+      }
+    }
+  }
+  
+  // Step 4: Other objects created (non-NFT) - only if significant
+  const otherObjects = data.objectsCreated?.filter((obj: any) => !obj.isNFT) || []
+  if (otherObjects.length > 3) {
+    breakdown.push(`{{${otherObjects.length} object${otherObjects.length > 1 ? 's' : ''}}} created`)
+  }
+  
+  return breakdown
+}
+
 function generateAISummary(data: any): string {
   // Analyze the transaction to generate a simple, high-level summary
   
@@ -671,11 +995,123 @@ function generateAISummary(data: any): string {
     return truncateAddress(address)
   }
   
+  // Helper to get full address from owner object
+  const getFullAddress = (owner: any): string => {
+    if (!owner) return 'Unknown'
+    if (typeof owner === 'string') return owner
+    if (owner.AddressOwner) return owner.AddressOwner
+    if (owner.ObjectOwner) return owner.ObjectOwner
+    if (owner.Shared) return 'Shared'
+    if (owner.Immutable) return 'Immutable'
+    return 'Unknown'
+  }
+  
+  // Helper to check if NFT is "relevant" (has proper metadata/name)
+  const isRelevantNFT = (nft: any): boolean => {
+    const name = nft.nftMetadata?.name || ''
+    const objectType = nft.objectType || ''
+    
+    // Filter out generic/temporary NFTs
+    if (!name || name.toLowerCase().includes('unknown')) return false
+    if (objectType.toLowerCase().includes('temp') || objectType.toLowerCase().includes('placeholder')) return false
+    
+    return true
+  }
+  
   // Priority 1: Look for NFT transfers (most interesting!)
+  // Enhanced logic: Detect when NFTs are minted AND transferred (intent vs intermediate steps)
   if (data.objectsTransferred && data.objectsTransferred.length > 0) {
-    const nftTransfers = data.objectsTransferred.filter((t: any) => t.isNFT)
+    const nftTransfers = data.objectsTransferred.filter((t: any) => t.isNFT && isRelevantNFT(t))
+    const nftsCreated = data.objectsCreated?.filter((obj: any) => obj.isNFT && isRelevantNFT(obj)) || []
     
     if (nftTransfers.length > 0) {
+      // Check if these NFTs were created in the same transaction
+      const createdNFTIds = new Set(nftsCreated.map((nft: any) => nft.objectId))
+      const mintedAndTransferred = nftTransfers.filter((t: any) => createdNFTIds.has(t.objectId))
+      
+      // If NFTs were minted and transferred, focus on the FINAL recipient (the intent)
+      if (mintedAndTransferred.length > 0) {
+        // Group by recipient to see who ended up with what
+        const recipientMap = new Map<string, any[]>()
+        for (const transfer of mintedAndTransferred) {
+          const rawChange = data.rawObjectChanges?.find((c: any) => 
+            c.objectId === transfer.objectId && c.type === 'transferred'
+          )
+          const toAddr = rawChange ? getFullAddress(rawChange.recipient) : transfer.to
+          
+          if (!recipientMap.has(toAddr)) {
+            recipientMap.set(toAddr, [])
+          }
+          recipientMap.get(toAddr)!.push(transfer)
+        }
+        
+        // Filter out the sender (sender is the one initiating, not receiving)
+        const senderAddr = data.sender
+        for (const [addr, transfers] of recipientMap.entries()) {
+          if (addr === senderAddr) {
+            recipientMap.delete(addr)
+          }
+        }
+        
+        // Find non-sender recipients
+        const recipients = Array.from(recipientMap.entries()).filter(([addr]) => addr !== senderAddr)
+        
+        if (recipients.length > 0) {
+          // Sort by count to find primary recipient
+          recipients.sort((a, b) => b[1].length - a[1].length)
+          
+          const [primaryRecipientAddr, primaryTransfers] = recipients[0]
+          const recipientLabel = getUserLabel(primaryRecipientAddr)
+          const senderLabel = getUserLabel(senderAddr)
+          
+          const count = primaryTransfers.length
+          
+          if (count === 1) {
+            const nftName = primaryTransfers[0].nftMetadata?.name || 'NFT'
+            return `{{${recipientLabel}}} received ${nftName} from {{${senderLabel}}}`
+          } else if (count > 1) {
+            // Try to get collection name from first NFT
+            const firstNFT = primaryTransfers[0]
+            let collectionName = 'NFT'
+            
+            if (firstNFT.nftMetadata?.name) {
+              // Try to extract collection name (text before #, number, or other delimiter)
+              const name = firstNFT.nftMetadata.name
+              const splitByHash = name.split('#')[0]
+              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+            }
+            
+            return `{{${recipientLabel}}} received ${count} ${collectionName}${count > 1 ? 's' : ''} from {{${senderLabel}}}`
+          }
+        }
+        
+        // Edge case: All NFTs went back to sender (self-minting)
+        if (recipientMap.has(senderAddr) && recipientMap.size === 1) {
+          const senderLabel = getUserLabel(senderAddr)
+          const transfers = recipientMap.get(senderAddr)!
+          const count = transfers.length
+          
+          if (count === 1) {
+            const nftName = transfers[0].nftMetadata?.name || 'NFT'
+            return `{{${senderLabel}}} mints ${nftName}`
+          } else {
+            const firstNFT = transfers[0]
+            let collectionName = 'NFT'
+            
+            if (firstNFT.nftMetadata?.name) {
+              const name = firstNFT.nftMetadata.name
+              const splitByHash = name.split('#')[0]
+              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+            }
+            
+            return `{{${senderLabel}}} mints ${count} ${collectionName}${count > 1 ? 's' : ''}`
+          }
+        }
+      }
+      
+      // Fallback: Regular NFT transfer logic (no minting involved)
       // Group by recipient to see who received what
       const recipientMap = new Map<string, any[]>()
       for (const transfer of nftTransfers) {
@@ -805,17 +1241,81 @@ function generateAISummary(data: any): string {
   }
   
   // Priority 5: Look at what was created (prioritize NFTs)
+  // IMPORTANT: Check who owns the created NFTs to detect the recipient!
   if (data.objectsCreated && data.objectsCreated.length > 0) {
     const senderLabel = getUserLabel(data.sender)
     
     // Check for NFTs first
-    const nfts = data.objectsCreated.filter((obj: any) => obj.isNFT)
+    const nfts = data.objectsCreated.filter((obj: any) => obj.isNFT && isRelevantNFT(obj))
     if (nfts.length > 0) {
+      // Check who owns these NFTs - if not the sender, they were transferred!
+      const recipientMap = new Map<string, any[]>()
+      
+      for (const nft of nfts) {
+        const rawCreated = data.rawObjectChanges?.find((c: any) => 
+          c.objectId === nft.objectId && c.type === 'created'
+        )
+        
+        if (rawCreated && rawCreated.owner) {
+          const ownerAddr = getFullAddress(rawCreated.owner)
+          if (ownerAddr && ownerAddr !== 'Unknown' && ownerAddr !== data.sender) {
+            // NFT was created for someone else!
+            if (!recipientMap.has(ownerAddr)) {
+              recipientMap.set(ownerAddr, [])
+            }
+            recipientMap.get(ownerAddr)!.push(nft)
+          }
+        }
+      }
+      
+      // If NFTs were created for someone else, focus on the recipient
+      if (recipientMap.size > 0) {
+        // Find the recipient with the most NFTs
+        let maxRecipient = null
+        let maxCount = 0
+        for (const [addr, nftList] of recipientMap.entries()) {
+          if (nftList.length > maxCount) {
+            maxCount = nftList.length
+            maxRecipient = addr
+          }
+        }
+        
+        if (maxRecipient && maxCount > 0) {
+          const recipientLabel = getUserLabel(maxRecipient)
+          const recipientNFTs = recipientMap.get(maxRecipient)!
+          
+          if (maxCount === 1) {
+            const nftName = recipientNFTs[0].nftMetadata?.name || 'NFT'
+            return `{{${recipientLabel}}} received ${nftName} from {{${senderLabel}}}`
+          } else {
+            // Extract collection name
+            let collectionName = 'NFT'
+            if (recipientNFTs[0].nftMetadata?.name) {
+              const name = recipientNFTs[0].nftMetadata.name
+              const splitByHash = name.split('#')[0]
+              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+            }
+            return `{{${recipientLabel}}} received ${maxCount} ${collectionName}${maxCount > 1 ? 's' : ''} from {{${senderLabel}}}`
+          }
+        }
+      }
+      
+      // Fallback: NFTs kept by sender
       if (nfts.length === 1) {
         const nftName = nfts[0].nftMetadata?.name || 'NFT'
-        return `{{${senderLabel}}} creates ${nftName}`
+        return `{{${senderLabel}}} minted ${nftName}`
       }
-      return `{{${senderLabel}}} creates ${nfts.length} NFTs`
+      
+      // Extract collection name for multiple NFTs
+      let collectionName = 'NFT'
+      if (nfts[0].nftMetadata?.name) {
+        const name = nfts[0].nftMetadata.name
+        const splitByHash = name.split('#')[0]
+        const splitByNumber = name.replace(/\s*\d+\s*$/, '')
+        collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
+      }
+      return `{{${senderLabel}}} minted ${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}`
     }
     
     // Regular objects

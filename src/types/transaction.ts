@@ -21,6 +21,7 @@ export interface ParsedTransaction {
   summary: string[]
   userAddressMap: Map<string, string>
   aiSummary: string
+  aiBreakdown?: string[] // Detailed step-by-step breakdown
   
   // Raw data (for advanced users)
   rawEffects?: unknown
@@ -32,6 +33,7 @@ export interface ObjectChange {
   version?: string
   digest?: string
   owner?: string
+  fullOwnerAddress?: string  // Full address before formatting
   isNFT?: boolean
   nftMetadata?: {
     name?: string

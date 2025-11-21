@@ -59,19 +59,34 @@ function App() {
             <div className="mt-6 p-8 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 text-center">
               <Loader2 className="w-12 h-12 text-sui-blue animate-spin mx-auto mb-4" />
               <p className="text-white text-lg font-medium">Fetching transaction data...</p>
-              <p className="text-gray-400 text-sm mt-2">This may take a few seconds</p>
+              <p className="text-gray-400 text-sm mt-2">This may take up to 30 seconds</p>
+              <p className="text-gray-500 text-xs mt-3">
+                The app will automatically retry if needed
+              </p>
             </div>
           )}
 
           {/* Error Display */}
           {error && !loading && (
-            <div className="mt-6 p-4 bg-red-900/50 border border-red-700 rounded-lg">
-              <p className="text-red-200 text-center">
-                <strong>Error:</strong> {error}
-              </p>
-              <p className="text-red-300 text-sm text-center mt-2">
-                Make sure the transaction digest is valid and from Sui mainnet.
-              </p>
+            <div className="mt-6 p-6 bg-red-900/50 border-2 border-red-700 rounded-xl backdrop-blur-md">
+              <div className="text-center">
+                <p className="text-red-200 text-lg mb-2">
+                  <strong>Error:</strong> {error}
+                </p>
+                <p className="text-red-300 text-sm mt-3">
+                  Make sure the transaction digest is valid and from Sui mainnet.
+                </p>
+                {error.includes('timeout') || error.includes('slow') ? (
+                  <div className="mt-4 p-3 bg-red-800/30 rounded-lg">
+                    <p className="text-red-200 text-sm font-medium">💡 Tips:</p>
+                    <ul className="text-red-300 text-xs mt-2 space-y-1">
+                      <li>• Wait a few seconds and try again</li>
+                      <li>• The Sui network might be experiencing high load</li>
+                      <li>• Check if the transaction ID is correct</li>
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
 

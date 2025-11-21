@@ -86,14 +86,27 @@ export function NFTCard({ nft }: NFTCardProps) {
 
           {/* Attributes */}
           {nft.nftMetadata.attributes && Object.keys(nft.nftMetadata.attributes).length > 0 && (
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-gray-400 mb-2">Attributes:</p>
-              {Object.entries(nft.nftMetadata.attributes).slice(0, 5).map(([key, value]) => (
-                <div key={key} className="flex justify-between text-xs">
-                  <span className="text-gray-400">{key}:</span>
-                  <span className="text-gray-200">{value}</span>
-                </div>
-              ))}
+            <div className="space-y-1 mt-3 pt-3 border-t border-slate-600">
+              <p className="text-xs font-semibold text-gray-400 mb-2">Attributes</p>
+              <div className="space-y-1.5">
+                {Object.entries(nft.nftMetadata.attributes).slice(0, 5).map(([key, value]) => {
+                  // Skip if value is empty or invalid
+                  if (!value || value === '' || value === 'undefined' || value === 'null') return null
+                  
+                  // Handle nested objects by converting to string
+                  let displayValue = value
+                  if (typeof value === 'object' && value !== null) {
+                    displayValue = JSON.stringify(value)
+                  }
+                  
+                  return (
+                    <div key={key} className="flex justify-between text-xs gap-2">
+                      <span className="text-gray-400 capitalize font-medium">{key.replace(/_/g, ' ')}:</span>
+                      <span className="text-gray-200 truncate text-right max-w-[60%]">{String(displayValue)}</span>
+                    </div>
+                  )
+                }).filter(Boolean)}
+              </div>
             </div>
           )}
 

@@ -34,6 +34,8 @@ function parseSummaryItem(item: string, transaction: ParsedTransaction) {
       
       // Check if it's a user label (exists in userAddressMap)
       const address = transaction.userAddressMap.get(content)
+      console.log('parseSummaryItem: Looking up', content, '→', address, 'Available keys:', Array.from(transaction.userAddressMap.keys()))
+      
       if (address) {
         return (
           <AddressTooltip 
@@ -134,9 +136,28 @@ export function TransactionDisplay({ transaction }: TransactionDisplayProps) {
           </div>
           <h3 className="text-lg font-semibold text-gray-300">Transaction Summary</h3>
         </div>
-        <p className="text-2xl font-bold text-white leading-relaxed">
+        <div className="text-2xl font-bold text-white leading-relaxed mb-4">
           {parseSummaryItem(transaction.aiSummary, transaction)}
-        </p>
+        </div>
+        
+        {/* AI Breakdown - Step by step */}
+        {transaction.aiBreakdown && transaction.aiBreakdown.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-white/20">
+            <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">How it happened:</h4>
+            <div className="space-y-3">
+              {transaction.aiBreakdown.map((step, index) => (
+                <div key={index} className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-6 h-6 bg-sui-blue/20 rounded-full flex items-center justify-center">
+                    <span className="text-sui-blue text-xs font-bold">{index + 1}</span>
+                  </div>
+                  <div className="text-base text-gray-200 leading-relaxed pt-0.5">
+                    {parseSummaryItem(step, transaction)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Status and Overview Card */}
@@ -188,6 +209,12 @@ export function TransactionDisplay({ transaction }: TransactionDisplayProps) {
         </div>
       </div>
 
+      {/* Visualization - Show early for better UX */}
+      {(transaction.objectsTransferred.length > 0 || 
+        transaction.objectsCreated.filter(obj => obj.isNFT).length > 0) && (
+        <TransactionVisualization transaction={transaction} />
+      )}
+
       {/* Human-Readable Summary */}
       <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
         <div className="flex items-center gap-2 mb-4">
@@ -198,18 +225,13 @@ export function TransactionDisplay({ transaction }: TransactionDisplayProps) {
           {transaction.summary.map((item, index) => (
             <div key={index} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
               <div className="w-2 h-2 bg-sui-blue rounded-full mt-2 flex-shrink-0"></div>
-              <p className="text-gray-200">
+              <div className="text-gray-200">
                 {parseSummaryItem(item, transaction)}
-              </p>
+              </div>
             </div>
           ))}
         </div>
       </div>
-
-      {/* Visualization */}
-      {transaction.objectsTransferred.length > 0 && (
-        <TransactionVisualization transaction={transaction} />
-      )}
 
       {/* Package Calls */}
       {transaction.packageCalls.length > 0 && (
