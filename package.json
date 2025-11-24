@@ -10,15 +10,16 @@
   },
   "dependencies": {
     "@mysten/sui.js": "^0.54.1",
+    "lucide-react": "^0.292.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "lucide-react": "^0.292.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
+    "@vercel/node": "^5.5.10",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.53.0",
@@ -30,4 +31,3 @@
     "vite": "^5.0.0"
   }
 }
-

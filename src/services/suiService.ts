@@ -3,14 +3,14 @@ import { ParsedTransaction, ObjectChange, TransferChange, PackageCall } from '..
 
 // Initialize Sui client with proper configuration
 // In development, use the Vite proxy to avoid CORS issues
-// In production, this will need to be configured differently
+// In production, use the Vercel serverless function proxy
 const getRpcUrl = () => {
   if (import.meta.env.DEV) {
     // Use Vite proxy in development
     return '/sui-rpc'
   }
-  // In production, use the direct URL
-  return 'https://fullnode.mainnet.sui.io:443'
+  // In production, use the Vercel API route proxy
+  return '/api/sui-rpc'
 }
 
 // Fallback RPC endpoints in case primary fails

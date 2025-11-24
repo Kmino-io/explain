@@ -4,6 +4,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/sui-rpc",
+      "destination": "/api/sui-rpc"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
