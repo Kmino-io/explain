@@ -8,7 +8,7 @@ interface ExpandableObjectListProps {
   count: number
 }
 
-export function ExpandableObjectList({ objects, title, count }: ExpandableObjectListProps) {
+export function ExpandableObjectList({ objects, title, count: _count }: ExpandableObjectListProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
   return (

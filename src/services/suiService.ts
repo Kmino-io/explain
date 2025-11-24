@@ -1,4 +1,4 @@
-import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client'
+import { SuiClient } from '@mysten/sui.js/client'
 import { ParsedTransaction, ObjectChange, TransferChange, PackageCall } from '../types/transaction'
 
 // Initialize Sui client with proper configuration
@@ -886,10 +886,6 @@ function generateAIBreakdown(data: any): string[] {
   const nftTransfers = (data.objectsTransferred?.filter((t: any) => t.isNFT && isRelevantNFT(t)) || [])
   
   if (nftsCreated.length > 0) {
-    // Check which NFTs were created AND transferred
-    const createdNFTIds = new Set(nftsCreated.map((nft: any) => nft.objectId))
-    const mintedAndTransferred = nftTransfers.filter((t: any) => createdNFTIds.has(t.objectId))
-    
     // Group NFTs by collection
     const collectionMap = new Map<string, any[]>()
     for (const nft of nftsCreated) {
@@ -1047,7 +1043,7 @@ function generateAISummary(data: any): string {
         
         // Filter out the sender (sender is the one initiating, not receiving)
         const senderAddr = data.sender
-        for (const [addr, transfers] of recipientMap.entries()) {
+        for (const [addr] of recipientMap.entries()) {
           if (addr === senderAddr) {
             recipientMap.delete(addr)
           }
