@@ -172,7 +172,11 @@ function App() {
         {!loading && !error && !transaction && (
           <div className="flex items-center justify-center h-full">
             <div className="w-[1000px] max-w-full px-6">
-              <TransactionInput onSubmit={handleFetchTransaction} loading={false} />
+              <TransactionInput
+                onSubmit={handleFetchTransaction}
+                onError={setError}
+                loading={false}
+              />
             </div>
           </div>
         )}
@@ -201,7 +205,11 @@ function App() {
         {error && !loading && (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-6 w-[1000px] max-w-full px-6">
-              <TransactionInput onSubmit={handleFetchTransaction} loading={false} />
+              <TransactionInput
+                onSubmit={handleFetchTransaction}
+                onError={setError}
+                loading={false}
+              />
               <div className="p-6 bg-red-900/50 border-2 border-red-700 rounded-xl backdrop-blur-md w-full">
                 <p className="text-red-200 text-lg text-center">
                   <strong>Error:</strong> {error}
