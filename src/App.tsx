@@ -4,6 +4,13 @@ import { TransactionDisplay, TransactionResultFooter } from './components/Transa
 import { fetchTransactionDetails } from './services/suiService'
 import { ParsedTransaction } from './types/transaction'
 import { ChevronDown } from 'lucide-react'
+import {
+  Language,
+  LanguageContext,
+  LANGUAGE_LABELS,
+  allTranslations,
+  useT,
+} from './i18n'
 
 // Figma assets — valid for 7 days; replace with permanent hosted assets
 const imgSuiLogoMask = 'https://www.figma.com/api/mcp/asset/79e64386-46d2-44cd-8d06-77911c820ee0'
@@ -111,11 +118,13 @@ function SuiLogo() {
   )
 }
 
-function App() {
+function AppInner() {
+  const { t, language, setLanguage } = useT()
   const [transaction, setTransaction] = useState<ParsedTransaction | null>(null)
   const [loading, setLoading] = useState(false)
   const [currentDigest, setCurrentDigest] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [langOpen, setLangOpen] = useState(false)
 
   const handleFetchTransaction = async (digest: string) => {
     setLoading(true)
@@ -127,7 +136,7 @@ function App() {
       if (!digest || digest.length < 32) {
         throw new Error('Invalid transaction digest format')
       }
-      const txData = await fetchTransactionDetails(digest)
+      const txData = await fetchTransactionDetails(digest, language)
       setTransaction(txData)
     } catch (err) {
       console.error('Transaction fetch error:', err)
@@ -145,23 +154,43 @@ function App() {
       </div>
 
       {/* Navbar */}
-      <div className="relative z-10 p-5">
+      <div className="relative z-50 p-5">
         <nav className="backdrop-blur-[6px] bg-[#131518] flex items-center justify-between px-[100px] py-[11.5px]">
           <SuiLogo />
           <span
             className="text-white text-[20px] font-bold tracking-wide"
             style={{ fontFamily: "'TWK Everett', sans-serif" }}
           >
-            Transaction Explainer
+            {t.appTitle}
           </span>
-          <div className="flex items-center gap-2">
-            <span
-              className="text-white text-[16px]"
-              style={{ fontFamily: "'DM Mono', monospace" }}
+          {/* Language switcher */}
+          <div className="relative">
+            <button
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => setLangOpen(o => !o)}
             >
-              English
-            </span>
-            <ChevronDown className="w-5 h-5 text-white" />
+              <span
+                className="text-white text-[16px]"
+                style={{ fontFamily: "'DM Mono', monospace" }}
+              >
+                {LANGUAGE_LABELS[language]}
+              </span>
+              <ChevronDown className={`w-5 h-5 text-white transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {langOpen && (
+              <div className="absolute right-0 top-full mt-2 bg-[#131518] border border-[#1e2026] z-50 min-w-[160px]">
+                {(Object.keys(LANGUAGE_LABELS) as Language[]).map(lang => (
+                  <button
+                    key={lang}
+                    className={`w-full text-left px-4 py-2 text-[14px] hover:bg-[#1e2026] transition-colors ${lang === language ? 'text-[#298dff]' : 'text-white'}`}
+                    style={{ fontFamily: "'DM Mono', monospace" }}
+                    onClick={() => { setLanguage(lang); setLangOpen(false) }}
+                  >
+                    {LANGUAGE_LABELS[lang]}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </nav>
       </div>
@@ -189,8 +218,8 @@ function App() {
                 className="text-[#298dff] text-[14px] text-center leading-[20.8px] tracking-[-0.16px]"
                 style={{ fontFamily: "'DM Mono', monospace" }}
               >
-                I'm fetching data from {currentDigest}.<br />
-                This may take up to 30 seconds, please wait
+                {t.loading(currentDigest)}<br />
+                {t.loadingWait}
               </p>
               <div className="flex gap-2 items-center h-[10px]">
                 <div className="bg-[#298dff] size-[10px] animate-bounce [animation-delay:0ms]" />
@@ -215,15 +244,15 @@ function App() {
                   <strong>Error:</strong> {error}
                 </p>
                 <p className="text-red-300 text-sm text-center mt-3">
-                  Make sure the transaction digest is valid and from Sui mainnet.
+                  {t.errorHint}
                 </p>
                 {(error.includes('timeout') || error.includes('slow')) && (
                   <div className="mt-4 p-3 bg-red-800/30 rounded-lg">
-                    <p className="text-red-200 text-sm font-medium">Tips:</p>
+                    <p className="text-red-200 text-sm font-medium">{t.errorTipsTitle}</p>
                     <ul className="text-red-300 text-xs mt-2 space-y-1">
-                      <li>• Wait a few seconds and try again</li>
-                      <li>• The Sui network might be experiencing high load</li>
-                      <li>• Check if the transaction ID is correct</li>
+                      <li>• {t.tipWait}</li>
+                      <li>• {t.tipNetwork}</li>
+                      <li>• {t.tipCheck}</li>
                     </ul>
                   </div>
                 )}
@@ -243,6 +272,16 @@ function App() {
       {/* Footer — shown only after a result */}
       {transaction && !loading && <TransactionResultFooter />}
     </div>
+  )
+}
+
+function App() {
+  const [language, setLanguage] = useState<Language>('en')
+  const t = allTranslations[language]
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+      <AppInner />
+    </LanguageContext.Provider>
   )
 }
 

@@ -10,6 +10,7 @@ import {
   TransactionCategory,
   TransactionNarrative,
 } from '../types/transaction'
+import { Language, Translations, allTranslations } from '../i18n'
 
 // ── Client setup ──────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ async function retryWithBackoff<T>(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function fetchTransactionDetails(digest: string): Promise<ParsedTransaction> {
+export async function fetchTransactionDetails(digest: string, language: Language = 'en'): Promise<ParsedTransaction> {
   let attemptedFallback = false
 
   try {
@@ -101,12 +102,12 @@ export async function fetchTransactionDetails(digest: string): Promise<ParsedTra
       console.warn('Enrichment failed, continuing:', enrichError)
     }
 
-    return parseTransaction(enrichedTxBlock)
+    return parseTransaction(enrichedTxBlock, language)
   } catch (error) {
     if (!attemptedFallback && !import.meta.env.DEV) {
       attemptedFallback = true
       const switched = await tryAlternativeEndpoint()
-      if (switched) return fetchTransactionDetails(digest)
+      if (switched) return fetchTransactionDetails(digest, language)
     }
 
     if (error instanceof Error) {
@@ -183,7 +184,7 @@ async function enrichWithObjectData(txBlock: any, suiClient: SuiClient): Promise
 
 // ── Core parser ───────────────────────────────────────────────────────────────
 
-function parseTransaction(txBlock: any): ParsedTransaction {
+function parseTransaction(txBlock: any, language: Language = 'en'): ParsedTransaction {
   const effects = txBlock.effects
   const objectChanges: any[] = txBlock.objectChanges || []
   const rawBalanceChanges: any[] = txBlock.balanceChanges || []
@@ -302,6 +303,7 @@ function parseTransaction(txBlock: any): ParsedTransaction {
     objectsTransferred,
     objectsCreated,
     success,
+    t: allTranslations[language],
   })
 
   return {
@@ -541,21 +543,22 @@ interface NarrativeInput {
   objectsTransferred: TransferChange[]
   objectsCreated: ObjectChange[]
   success: boolean
+  t: Translations
 }
 
 function buildNarrative(input: NarrativeInput): TransactionNarrative {
   const {
     category, events, commands, netBalanceChanges,
-    sender, getUserLabel, objectsTransferred, objectsCreated, success,
+    sender, getUserLabel, objectsTransferred, objectsCreated, success, t,
   } = input
 
   const senderLabel = getUserLabel(sender)
 
   if (!success) {
     return {
-      headline: 'Failed Transaction',
-      what: `{{${senderLabel}}} attempted a transaction that did not succeed. No assets were moved.`,
-      outcome: 'No changes — transaction reverted',
+      headline: t.headlineFailed,
+      what: t.narrativeFailed(senderLabel),
+      outcome: t.narrativeFailedOutcome,
     }
   }
 
@@ -578,7 +581,6 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const profitText = profit ? `+${profit.formattedAmount} ${profit.symbol}` : 'an unknown profit'
     const swapCount = swapEvents.length
 
-    // Steps
     const steps: string[] = []
 
     const borrowEvent = events.find(e => {
@@ -591,26 +593,25 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       const fullType = typeNameRaw ? ('0x' + typeNameRaw) : ''
       const { symbol: sym, decimals } = fullType ? getTokenInfoFromType(fullType) : { symbol: 'tokens', decimals: 6 }
       const amount = qty ? formatCoinAmount(qty, decimals) : '?'
-      steps.push(`Borrowed ${amount} ${sym} via flash loan — no upfront cost required`)
+      steps.push(t.narrativeArbitrageStepBorrow(amount, sym))
     }
 
     swapEvents.forEach((e, i) => {
       const dex = humanizeModuleName(e.module)
-      // Get the token types from the matching command's typeSymbols
       const matchingCmd = commands.find(
         c => c.commandType === 'MoveCall' && c.module === e.module
       )
       const typeText = matchingCmd?.typeSymbols?.length
         ? ` — ${matchingCmd.typeSymbols.join(' → ')}`
         : ''
-      steps.push(`Swap ${i + 1}: exchanged tokens on ${dex}${typeText}`)
+      steps.push(t.narrativeArbitrageStepSwap(i, dex, typeText))
     })
 
-    steps.push(`Repaid the flash loan in full and kept ${profitText} as profit`)
+    steps.push(t.narrativeArbitrageStepRepay(profitText))
 
     return {
-      headline: 'Flash Loan Arbitrage',
-      what: `{{${senderLabel}}} borrowed tokens for free using a flash loan, instantly swapped through ${swapCount} exchange${swapCount !== 1 ? 's' : ''}, and repaid the loan in the same transaction — keeping a profit of ${profitText}.`,
+      headline: t.headlineArbitrage,
+      what: t.narrativeArbitrage(senderLabel, swapCount, profitText),
       outcome: profitText,
       steps,
     }
@@ -621,8 +622,8 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const call = commands.find(c => c.commandType === 'MoveCall')
     const protocol = call ? humanizeModuleName(call.module ?? '') : 'a lending protocol'
     return {
-      headline: 'Flash Loan',
-      what: `{{${senderLabel}}} took out a flash loan from ${protocol} and repaid it within the same transaction.`,
+      headline: t.headlineFlashLoan,
+      what: t.narrativeFlashLoan(senderLabel, protocol),
       outcome: outcomeFromChanges(),
     }
   }
@@ -643,12 +644,12 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       : 'tokens'
 
     const steps = swapEvents.length > 1
-      ? swapEvents.map((e, i) => `Step ${i + 1}: swapped tokens on ${humanizeModuleName(e.module)}`)
+      ? swapEvents.map((e, i) => t.narrativeSwapStep(i, humanizeModuleName(e.module)))
       : undefined
 
     return {
-      headline: swapEvents.length > 1 ? 'Multi-hop Token Swap' : 'Token Swap',
-      what: `{{${senderLabel}}} swapped ${swapDesc}${dexText}.`,
+      headline: swapEvents.length > 1 ? t.headlineMultiSwap : t.headlineSwap,
+      what: t.narrativeSwap(senderLabel, swapDesc, dexText),
       outcome: inChange ? `+${inChange.formattedAmount} ${inChange.symbol}` : outcomeFromChanges(),
       steps,
     }
@@ -668,18 +669,16 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       amount = 'tokens'
     }
 
-    // Try to find the recipient address
     const recipientRaw = coinTransfer
       ? getFullAddress(
           (txBlock_findTransferRecipient(coinTransfer.objectId) ?? coinTransfer.to)
         )
       : null
     const recipientLabel = recipientRaw ? getUserLabel(recipientRaw) : null
-    const toText = recipientLabel ? ` to {{${recipientLabel}}}` : ''
 
     return {
-      headline: 'Token Transfer',
-      what: `{{${senderLabel}}} sent ${amount}${toText}.`,
+      headline: t.headlineCoinTransfer,
+      what: t.narrativeCoinTransfer(senderLabel, amount, recipientLabel ?? ''),
       outcome: outChange ? `-${outChange.formattedAmount} ${outChange.symbol}` : `-${amount}`,
     }
   }
@@ -694,11 +693,11 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       : 'NFT'
 
     return {
-      headline: 'NFT Mint',
+      headline: t.headlineNftMint,
       what: count === 1
-        ? `{{${senderLabel}}} minted "${collectionName}".`
-        : `{{${senderLabel}}} minted ${count} NFTs from the ${collectionName} collection.`,
-      outcome: `${count} NFT${count !== 1 ? 's' : ''} minted`,
+        ? t.narrativeNftMint1(senderLabel, collectionName)
+        : t.narrativeNftMintN(senderLabel, count, collectionName),
+      outcome: t.narrativeNftMintOutcome(count),
     }
   }
 
@@ -708,14 +707,13 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const count = nfts.length
     const name = nfts[0]?.nftMetadata?.name || 'NFT'
     const recipientLabel = nfts[0]?.to ? getUserLabel(nfts[0].to) : null
-    const toText = recipientLabel ? ` to {{${recipientLabel}}}` : ''
 
     return {
-      headline: 'NFT Transfer',
+      headline: t.headlineNftTransfer,
       what: count === 1
-        ? `{{${senderLabel}}} transferred "${name}"${toText}.`
-        : `{{${senderLabel}}} transferred ${count} NFTs${toText}.`,
-      outcome: `${count} NFT${count !== 1 ? 's' : ''} transferred`,
+        ? t.narrativeNftTransfer1(senderLabel, name, recipientLabel ?? '')
+        : t.narrativeNftTransferN(senderLabel, count, recipientLabel ?? ''),
+      outcome: t.narrativeNftTransferOutcome(count),
     }
   }
 
@@ -729,8 +727,10 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const protocol = call ? humanizeModuleName(call.module ?? '') : 'a DEX'
 
     return {
-      headline: isAdd ? 'Add Liquidity' : 'Remove Liquidity',
-      what: `{{${senderLabel}}} ${isAdd ? 'added liquidity to' : 'removed liquidity from'} ${protocol}.`,
+      headline: isAdd ? t.headlineAddLiquidity : t.headlineRemoveLiquidity,
+      what: isAdd
+        ? t.narrativeAddLiquidity(senderLabel, protocol)
+        : t.narrativeRemoveLiquidity(senderLabel, protocol),
       outcome: outcomeFromChanges(),
     }
   }
@@ -742,10 +742,10 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const amountText = suiChange ? `${suiChange.formattedAmount} SUI` : 'SUI'
 
     return {
-      headline: isUnstake ? 'Unstake SUI' : 'Stake SUI',
+      headline: isUnstake ? t.headlineUnstake : t.headlineStake,
       what: isUnstake
-        ? `{{${senderLabel}}} unstaked tokens and received them back into their wallet.`
-        : `{{${senderLabel}}} staked ${amountText} to earn staking rewards on Sui.`,
+        ? t.narrativeUnstake(senderLabel)
+        : t.narrativeStake(senderLabel, amountText),
       outcome: outcomeFromChanges(),
     }
   }
@@ -753,9 +753,9 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
   // ── Governance ─────────────────────────────────────────────────────────────
   if (category === 'governance') {
     return {
-      headline: 'Governance Vote',
-      what: `{{${senderLabel}}} participated in on-chain governance by casting a vote on a proposal.`,
-      outcome: 'Vote recorded on-chain',
+      headline: t.headlineGovernance,
+      what: t.narrativeGovernance(senderLabel),
+      outcome: t.narrativeGovernanceOutcome,
     }
   }
 
@@ -764,8 +764,8 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const outChange = netBalanceChanges.find(c => c.direction === 'out')
     const amountText = outChange ? `${outChange.formattedAmount} ${outChange.symbol}` : 'tokens'
     return {
-      headline: 'Cross-Chain Bridge',
-      what: `{{${senderLabel}}} bridged ${amountText} to another blockchain.`,
+      headline: t.headlineBridge,
+      what: t.narrativeBridge(senderLabel, amountText),
       outcome: outcomeFromChanges(),
     }
   }
@@ -783,7 +783,7 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
         const typeText = call.typeSymbols?.length ? ` with ${call.typeSymbols.join(' and ')}` : ''
         return {
           headline: protocol,
-          what: `{{${senderLabel}}} called "${fn}"${typeText} on ${protocol}.`,
+          what: t.narrativeContractCall1(senderLabel, fn, typeText, protocol),
           outcome: outcomeText,
         }
       }
@@ -792,13 +792,13 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       const protocolText = protocols.slice(0, 2).join(' and ')
       return {
         headline: 'Contract Interaction',
-        what: `{{${senderLabel}}} executed ${calls.length} contract calls across ${protocolText}.`,
+        what: t.narrativeContractCallN(senderLabel, calls.length, protocolText),
         outcome: outcomeText,
         steps: calls.map(c => {
           const fn = humanizeFunctionName(c.function ?? '')
           const mod = humanizeModuleName(c.module ?? '')
           const types = c.typeSymbols?.length ? ` (${c.typeSymbols.join(' → ')})` : ''
-          return `Called "${fn}${types}" on ${mod}`
+          return t.narrativeContractCallStep(fn, types, mod)
         }),
       }
     }
@@ -808,16 +808,16 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
   if (category === 'object-creation') {
     const count = objectsCreated.length
     return {
-      headline: 'Object Creation',
-      what: `{{${senderLabel}}} created ${count} new object${count !== 1 ? 's' : ''} on Sui.`,
-      outcome: `${count} object${count !== 1 ? 's' : ''} created`,
+      headline: t.headlineObjectCreation,
+      what: t.narrativeObjectCreation(senderLabel, count),
+      outcome: t.narrativeObjectCreationOutcome(count),
     }
   }
 
   // ── Unknown fallback ───────────────────────────────────────────────────────
   return {
-    headline: 'Sui Transaction',
-    what: `{{${senderLabel}}} executed a transaction on Sui.`,
+    headline: t.headlineUnknown,
+    what: t.narrativeUnknown(senderLabel),
     outcome: outcomeFromChanges() || 'Completed',
   }
 }

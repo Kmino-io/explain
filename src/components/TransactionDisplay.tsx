@@ -1,4 +1,5 @@
 import { ParsedTransaction, NetBalanceChange, TransactionCategory } from '../types/transaction'
+import { useT } from '../i18n'
 
 // ── Figma assets (valid 7 days — replace with permanent hosted assets) ──────
 const imgWallet       = 'https://www.figma.com/api/mcp/asset/10929cfd-19aa-4b80-9497-beaa5824e924'
@@ -60,11 +61,12 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
 
 // ── WalletCard ────────────────────────────────────────────────────────────────
 
-function WalletCard({ label, isError, content, linkUrl }: {
+function WalletCard({ label, isError, content, linkUrl, t }: {
   label: string
   isError: boolean
   content: CardContent
   linkUrl?: string
+  t: ReturnType<typeof useT>['t']
 }) {
   const borderCls  = isError ? 'border-[#ff2937]' : 'border-[#298dff]'
   const labelColor = isError ? 'text-[#ff2937]' : 'text-[#298dff]'
@@ -140,8 +142,7 @@ function WalletCard({ label, isError, content, linkUrl }: {
             <img alt="" className="absolute block w-full h-full object-contain" src={imgObjects} />
           </div>
           <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
-            created <span className="underline">{content.count} object{content.count !== 1 ? 's' : ''}</span>{' '}
-            <span className="underline">↗</span>
+            <span className="underline">{t.cardObjectsCreated(content.count)}</span>
           </span>
         </>
       )}
@@ -156,15 +157,14 @@ function WalletCard({ label, isError, content, linkUrl }: {
             ))}
           </div>
           <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
-            received <span className="underline">{content.count} NFT{content.count !== 1 ? 's' : ''}</span>{' '}
-            <span className="underline">↗</span>
+            <span className="underline">{t.cardNftsReceived(content.count)}</span>
           </span>
         </>
       )}
 
       {content.type === 'token' && (
         <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
-          {content.direction === 'out' ? 'sends' : 'receives'}{' '}
+          {content.direction === 'out' ? t.cardSends : t.cardReceives}{' '}
           <span className="underline">{content.formattedAmount} {content.symbol}</span>{' '}
           <span className="underline">↗</span>
         </span>
@@ -191,7 +191,7 @@ function WalletCard({ label, isError, content, linkUrl }: {
           </span>
           {content.steps !== undefined && content.steps > 1 && (
             <span className="text-[9px] text-[#6c7584] text-center leading-[1.3]" style={mono}>
-              {content.steps} steps
+              {t.stepsCount(content.steps)}
             </span>
           )}
         </>
@@ -199,7 +199,7 @@ function WalletCard({ label, isError, content, linkUrl }: {
 
       {content.type === 'failed' && (
         <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3] mt-auto pb-1" style={mono}>
-          transaction failed
+          {t.cardTxFailed}
         </span>
       )}
     </div>
@@ -209,6 +209,7 @@ function WalletCard({ label, isError, content, linkUrl }: {
 // ── OutcomeRow: net balance changes shown below the diagram ───────────────────
 
 function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
+  const { t } = useT()
   if (changes.length === 0) return null
 
   // Separate gas (small SUI outflow) from meaningful changes
@@ -221,7 +222,7 @@ function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
     <div className="flex flex-col items-center gap-2">
       {meaningful.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap justify-center">
-          <span className="text-[11px] text-[#6c7584]" style={mono}>Net result:</span>
+          <span className="text-[11px] text-[#6c7584]" style={mono}>{t.netResult}</span>
           {meaningful.map((c, i) => {
             const isGain = c.direction === 'in'
             return (
@@ -239,7 +240,7 @@ function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
       {gasChange && (
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-[#6c7584]" style={mono}>
-            Gas fee: {gasChange.formattedAmount} SUI
+            {t.gasFee} {gasChange.formattedAmount} SUI
           </span>
         </div>
       )}
@@ -256,10 +257,11 @@ function StepsBreakdown({
   steps: string[]
   transaction: ParsedTransaction
 }) {
+  const { t } = useT()
   return (
     <div className="w-full border border-[#1e2026] bg-[#0d0e10] p-4 flex flex-col gap-2">
       <span className="text-[11px] text-[#6c7584] uppercase tracking-widest" style={mono}>
-        Step by step
+        {t.stepByStep}
       </span>
       {steps.map((step, i) => (
         <div key={i} className="flex gap-3 items-start">
@@ -278,6 +280,7 @@ function StepsBreakdown({
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 function Footer() {
+  const { t } = useT()
   return (
     <div className="bg-black px-[120px] py-6 flex flex-col gap-6 items-start">
       <div className="flex gap-2 items-center">
@@ -288,7 +291,7 @@ function Footer() {
         ))}
       </div>
       <p className="text-[#6c7584] text-[13px] leading-[16.25px] whitespace-nowrap" style={{ fontFamily: 'Arial, sans-serif' }}>
-        ©2026 Kmino. All rights reserved
+        {t.footer}
       </p>
     </div>
   )
@@ -523,6 +526,7 @@ function humanizeFunctionName(fnName: string): string {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function TransactionDisplay({ transaction }: { transaction: ParsedTransaction }) {
+  const { t } = useT()
   const wallets = Array.from(transaction.userAddressMap.entries())
   const senderEntry = wallets.find(([, addr]) => addr === transaction.sender) ?? wallets[0]
   const senderLabel = senderEntry?.[0] ?? 'Wallet A'
@@ -531,6 +535,7 @@ export function TransactionDisplay({ transaction }: { transaction: ParsedTransac
 
   const steps = transaction.narrative.steps
   const hasSteps = steps && steps.length > 1 && showSteps(transaction.category)
+  const shortDigest = `${transaction.digest.slice(0, 6)}...${transaction.digest.slice(-4)}`
 
   return (
     <div className="w-[1000px] max-w-full px-6 flex flex-col items-center gap-6">
@@ -542,7 +547,7 @@ export function TransactionDisplay({ transaction }: { transaction: ParsedTransac
 
       {/* Diagram — items-stretch makes both cards share the height of the tallest one */}
       <div className="flex gap-6 items-stretch justify-center py-4">
-        <WalletCard label={senderLabel} isError={!transaction.success} content={senderContent} linkUrl={senderLink} />
+        <WalletCard label={senderLabel} isError={!transaction.success} content={senderContent} linkUrl={senderLink} t={t} />
 
         <div className={`self-center shrink-0 ${transaction.success ? 'h-[26px] w-[65px]' : 'flex items-center justify-center rotate-90 w-[26px] h-[26px]'}`}>
           <img
@@ -552,7 +557,7 @@ export function TransactionDisplay({ transaction }: { transaction: ParsedTransac
           />
         </div>
 
-        <WalletCard label={receiverLabel} isError={!transaction.success} content={receiverContent} linkUrl={receiverLink} />
+        <WalletCard label={receiverLabel} isError={!transaction.success} content={receiverContent} linkUrl={receiverLink} t={t} />
       </div>
 
       {/* Transaction link */}
@@ -563,7 +568,7 @@ export function TransactionDisplay({ transaction }: { transaction: ParsedTransac
         className="text-[11px] text-[#6c7584] hover:text-[#a1a7b2] transition-colors tracking-[-0.16px]"
         style={mono}
       >
-        tx: {transaction.digest.slice(0, 6)}...{transaction.digest.slice(-4)} ↗
+        {t.txLink(shortDigest)}
       </a>
 
       {/* Outcome row (net balance changes) */}
@@ -578,14 +583,14 @@ export function TransactionDisplay({ transaction }: { transaction: ParsedTransac
 
       {/* Follow-up prompt */}
       <p className="text-white text-[14px] text-center leading-[20.8px] tracking-[-0.16px]" style={mono}>
-        What do you want to better understand next?
+        {t.followUpPrompt}
       </p>
 
       {/* Follow-up input */}
       <div className="w-full h-[54px] flex items-center justify-center px-6">
         <input
           type="text"
-          placeholder="Ask about called functions, objects created, timestamp or more..."
+          placeholder={t.followUpPlaceholder}
           className="w-full bg-transparent border-none outline-none text-center text-[14px] text-[#6c7584] placeholder-[#6c7584] caret-[#298dff] tracking-[-0.16px]"
           style={mono}
         />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { useT } from '../i18n'
 
 interface TransactionInputProps {
   onSubmit: (digest: string) => void
@@ -15,11 +16,21 @@ const SUPPORTED_EXPLORER_HOSTS = new Set([
   'explorer.sui.io',
 ])
 
-function parseTransactionInput(rawInput: string): { digest?: string; error?: string } {
+interface ParseErrors {
+  empty: string
+  invalidUrl: string
+  unsupportedHost: string
+  notTxPage: string
+}
+
+function parseTransactionInput(
+  rawInput: string,
+  errors: ParseErrors,
+): { digest?: string; error?: string } {
   const trimmed = rawInput.trim()
 
   if (!trimmed) {
-    return { error: 'Please paste a Sui transaction ID or a supported explorer URL.' }
+    return { error: errors.empty }
   }
 
   const looksLikeUrl = /^https?:\/\//i.test(trimmed)
@@ -31,13 +42,11 @@ function parseTransactionInput(rawInput: string): { digest?: string; error?: str
   try {
     url = new URL(trimmed)
   } catch {
-    return { error: 'That link is not a valid URL.' }
+    return { error: errors.invalidUrl }
   }
 
   if (!SUPPORTED_EXPLORER_HOSTS.has(url.hostname)) {
-    return {
-      error: 'Only SuiScan, SuiVision, and Sui Explorer transaction URLs are supported.',
-    }
+    return { error: errors.unsupportedHost }
   }
 
   const parts = url.pathname.split('/').filter(Boolean)
@@ -54,18 +63,22 @@ function parseTransactionInput(rawInput: string): { digest?: string; error?: str
     if (digest) return { digest }
   }
 
-  return {
-    error: 'This URL does not look like a Sui transaction page. Paste a transaction link or ID.',
-  }
+  return { error: errors.notTxPage }
 }
 
 export function TransactionInput({ onSubmit, onError, loading }: TransactionInputProps) {
   const [input, setInput] = useState('')
+  const { t } = useT()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    const { digest, error } = parseTransactionInput(input)
+    const { digest, error } = parseTransactionInput(input, {
+      empty: t.inputEmptyError,
+      invalidUrl: t.inputUrlError,
+      unsupportedHost: t.inputHostError,
+      notTxPage: t.inputNotTxError,
+    })
     if (error) {
       onError(error)
       return
@@ -81,7 +94,7 @@ export function TransactionInput({ onSubmit, onError, loading }: TransactionInpu
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Paste a transaction hash or a full explorer URL from SuiScan, SuiVision, or Sui Explorer"
+          placeholder={t.inputPlaceholder}
           className="w-full bg-transparent border-none outline-none text-center text-[14px] text-[#6c7584] placeholder-[#6c7584] caret-[#298dff] tracking-[-0.16px]"
           style={{ fontFamily: "'DM Mono', monospace" }}
           disabled={loading}
