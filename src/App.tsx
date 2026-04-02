@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { TransactionInput } from './components/TransactionInput'
 import { TransactionDisplay, TransactionResultFooter } from './components/TransactionDisplay'
 import { fetchTransactionDetails } from './services/suiService'
@@ -8,7 +8,86 @@ import { ChevronDown } from 'lucide-react'
 // Figma assets — valid for 7 days; replace with permanent hosted assets
 const imgSuiLogoMask = 'https://www.figma.com/api/mcp/asset/79e64386-46d2-44cd-8d06-77911c820ee0'
 const imgSuiLogo = 'https://www.figma.com/api/mcp/asset/152f6d89-1a01-439d-91cb-61ecbe5a36dc'
-const imgDotPattern = 'https://www.figma.com/api/mcp/asset/ab6e41c7-407a-4794-9142-771b56c19172'
+
+// ── Animated dot grid background ─────────────────────────────────────────────
+function DotBackground() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const GAP = 22       // px between dot centres
+    const R   = 1.2      // dot radius
+    const GRAY  = 'rgba(108, 117, 132, 0.35)'
+    const BLUE  = [41, 141, 255] as const
+
+    // key → current alpha (1 → 0 as it fades)
+    const live = new Map<string, number>()
+
+    let frame: number
+    let lastSpawn = 0
+
+    const resize = () => {
+      canvas.width  = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
+    const tick = (ts: number) => {
+      const cols = Math.ceil(canvas.width  / GAP) + 1
+      const rows = Math.ceil(canvas.height / GAP) + 1
+
+      // Spawn 1-4 new blue dots every ~500 ms (+30% more dots)
+      if (ts - lastSpawn > 500) {
+        const n = Math.floor(Math.random() * 4) + 2
+        for (let i = 0; i < n; i++) {
+          const c = Math.floor(Math.random() * cols)
+          const r = Math.floor(Math.random() * rows)
+          live.set(`${c},${r}`, 1)
+        }
+        lastSpawn = ts
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          const x = c * GAP
+          const y = r * GAP
+          const key = `${c},${r}`
+          const alpha = live.get(key)
+
+          ctx.beginPath()
+          ctx.arc(x, y, R, 0, Math.PI * 2)
+
+          if (alpha !== undefined) {
+            ctx.fillStyle = `rgba(${BLUE[0]},${BLUE[1]},${BLUE[2]},${alpha})`
+            const next = alpha - 0.0015   // ~11 s fade at 60 fps
+            next <= 0 ? live.delete(key) : live.set(key, next)
+          } else {
+            ctx.fillStyle = GRAY
+          }
+
+          ctx.fill()
+        }
+      }
+
+      frame = requestAnimationFrame(tick)
+    }
+
+    frame = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
+
+  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+}
 
 function SuiLogo() {
   return (
@@ -60,13 +139,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-black relative">
-      {/* Dotted background pattern */}
+      {/* Animated dot grid background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <img
-          alt=""
-          className="absolute left-0 top-0 w-full h-full object-cover"
-          src={imgDotPattern}
-        />
+        <DotBackground />
       </div>
 
       {/* Navbar */}
