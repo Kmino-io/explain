@@ -1,55 +1,46 @@
 import { SuiClient } from '@mysten/sui.js/client'
-import { ParsedTransaction, ObjectChange, TransferChange, PackageCall } from '../types/transaction'
+import {
+  ParsedTransaction,
+  ObjectChange,
+  TransferChange,
+  PackageCall,
+  ParsedEvent,
+  NetBalanceChange,
+  ParsedCommand,
+  TransactionCategory,
+  TransactionNarrative,
+} from '../types/transaction'
 
-// Initialize Sui client with proper configuration
-// In development, use the Vite proxy to avoid CORS issues
-// In production, use the Vercel serverless function proxy
+// ── Client setup ──────────────────────────────────────────────────────────────
+
 const getRpcUrl = () => {
-  if (import.meta.env.DEV) {
-    // Use Vite proxy in development
-    return '/sui-rpc'
-  }
-  // In production, use the Vercel API route proxy
+  if (import.meta.env.DEV) return '/sui-rpc'
   return '/api/sui-rpc'
 }
 
-// Fallback RPC endpoints in case primary fails
 const FALLBACK_RPC_URLS = [
   'https://fullnode.mainnet.sui.io:443',
   'https://sui-mainnet-rpc.nodereal.io',
   'https://sui-mainnet.nodeinfra.com',
 ]
 
-let client = new SuiClient({ 
-  url: getRpcUrl()
-})
+let client = new SuiClient({ url: getRpcUrl() })
 
-// Function to try alternative RPC endpoints
 async function tryAlternativeEndpoint(): Promise<boolean> {
-  // Only try alternatives in production
   if (import.meta.env.DEV) return false
-  
   for (const url of FALLBACK_RPC_URLS) {
     try {
-      console.log(`Trying alternative RPC endpoint: ${url}`)
       const testClient = new SuiClient({ url })
-      // Quick health check
-      await withTimeout(
-        testClient.getLatestSuiSystemState(),
-        5000,
-        'Health check timeout'
-      )
-      console.log(`Successfully connected to ${url}`)
+      await withTimeout(testClient.getLatestSuiSystemState(), 5000, 'Health check timeout')
       client = testClient
       return true
-    } catch (error) {
-      console.warn(`Failed to connect to ${url}:`, error)
+    } catch {
+      // try next
     }
   }
   return false
 }
 
-// Helper function to add timeout to any promise
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
   return Promise.race([
     promise,
@@ -59,45 +50,37 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
   ])
 }
 
-// Retry logic with exponential backoff
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  initialDelay: number = 1000
+  maxRetries = 3,
+  initialDelay = 1000,
 ): Promise<T> {
   let lastError: Error | null = null
-  
   for (let i = 0; i < maxRetries; i++) {
     try {
       console.log(`Attempt ${i + 1}/${maxRetries}...`)
       return await fn()
     } catch (error) {
       lastError = error as Error
-      console.warn(`Attempt ${i + 1} failed:`, error instanceof Error ? error.message : error)
-      
-      // Don't retry on the last attempt
       if (i < maxRetries - 1) {
         const delay = initialDelay * Math.pow(2, i)
-        console.log(`Retrying in ${delay}ms...`)
         await new Promise(resolve => setTimeout(resolve, delay))
       }
     }
   }
-  
   throw lastError || new Error('All retry attempts failed')
 }
 
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export async function fetchTransactionDetails(digest: string): Promise<ParsedTransaction> {
   let attemptedFallback = false
-  
+
   try {
-    console.log('Fetching transaction:', digest)
-    
-    // Fetch transaction block with retry logic and timeout
     const txBlock = await retryWithBackoff(async () => {
       return await withTimeout(
         client.getTransactionBlock({
-          digest: digest,
+          digest,
           options: {
             showInput: true,
             showEffects: true,
@@ -106,46 +89,29 @@ export async function fetchTransactionDetails(digest: string): Promise<ParsedTra
             showBalanceChanges: true,
           },
         }),
-        20000, // 20 second timeout for main transaction fetch
-        'Transaction fetch timed out after 20 seconds'
+        20000,
+        'Transaction fetch timed out after 20 seconds',
       )
-    }, 3, 2000) // 3 retries with 2 second initial delay
+    }, 3, 2000)
 
-    console.log('Transaction fetched successfully, attempting enrichment...')
-
-    // Try to fetch object details for transferred coins and NFTs
-    // This is optional - if it fails, we'll still show the transaction
     let enrichedTxBlock = { ...txBlock, enrichedObjects: new Map() }
     try {
       enrichedTxBlock = await enrichWithObjectData(txBlock, client)
     } catch (enrichError) {
-      console.warn('Failed to enrich with object data, continuing without it:', enrichError)
-      // Continue with empty enrichedObjects map
+      console.warn('Enrichment failed, continuing:', enrichError)
     }
-    
-    console.log('Parsing transaction...')
-    // Parse the transaction
-    const parsed = parseTransaction(enrichedTxBlock)
-    console.log('Transaction parsed successfully')
-    return parsed
+
+    return parseTransaction(enrichedTxBlock)
   } catch (error) {
-    console.error('Error fetching transaction:', error)
-    
-    // Try alternative endpoints if available (production only)
     if (!attemptedFallback && !import.meta.env.DEV) {
       attemptedFallback = true
-      console.log('Attempting to use alternative RPC endpoint...')
       const switched = await tryAlternativeEndpoint()
-      if (switched) {
-        console.log('Retrying with alternative endpoint...')
-        return fetchTransactionDetails(digest) // Recursive call with new endpoint
-      }
+      if (switched) return fetchTransactionDetails(digest)
     }
-    
-    // Provide more helpful error messages
+
     if (error instanceof Error) {
-      if (error.message.includes('504') || error.message.includes('timeout') || error.message.includes('Timeout')) {
-        throw new Error('⏱️ The Sui network is slow to respond. Please try again in a moment. If the issue persists, the transaction ID might be incorrect.')
+      if (error.message.includes('504') || error.message.toLowerCase().includes('timeout')) {
+        throw new Error('⏱️ The Sui network is slow to respond. Please try again in a moment.')
       }
       if (error.message.includes('404') || error.message.includes('not found')) {
         throw new Error('❌ Transaction not found. Please check the transaction ID and try again.')
@@ -162,117 +128,96 @@ export async function fetchTransactionDetails(digest: string): Promise<ParsedTra
   }
 }
 
-async function enrichWithObjectData(txBlock: any, client: SuiClient): Promise<any> {
+// ── Object enrichment (for NFT metadata) ─────────────────────────────────────
+
+async function enrichWithObjectData(txBlock: any, suiClient: SuiClient): Promise<any> {
   try {
-    // Get transferred coin objects
     const coinObjects = (txBlock.objectChanges || [])
-      .filter((change: any) => change.type === 'transferred' && change.objectType?.includes('coin::Coin'))
-      .slice(0, 3) // Reduced to 3 coins
-    
-    // Get created objects (for NFTs that were just minted)
+      .filter((c: any) => c.type === 'transferred' && c.objectType?.includes('coin::Coin'))
+      .slice(0, 3)
+
     const createdObjects = (txBlock.objectChanges || [])
-      .filter((change: any) => change.type === 'created')
-      .slice(0, 5) // Reduced to 5 created objects
-    
-    // Get transferred non-coin objects (for NFT transfers)
-    const transferredNonCoinObjects = (txBlock.objectChanges || [])
-      .filter((change: any) => change.type === 'transferred' && !change.objectType?.includes('coin::Coin'))
-      .slice(0, 5) // Fetch up to 5 transferred NFTs
-    
-    const allObjectsToFetch = [...coinObjects, ...createdObjects, ...transferredNonCoinObjects]
-    
-    if (allObjectsToFetch.length === 0) {
-      return { ...txBlock, enrichedObjects: new Map() }
-    }
-    
-    console.log(`Attempting to enrich ${allObjectsToFetch.length} objects`, {
-      coins: coinObjects.length,
-      created: createdObjects.length,
-      transferredNonCoin: transferredNonCoinObjects.length
-    })
-    
-    // Fetch object data for each object with individual timeouts
-    const objectDataPromises = allObjectsToFetch.map(async (obj: any) => {
-      try {
-        // Shorter timeout per object
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 2000)
-        )
-        
-        const fetchPromise = client.getObject({
-          id: obj.objectId,
-          options: { showContent: true, showType: true, showDisplay: true }
+      .filter((c: any) => c.type === 'created')
+      .slice(0, 5)
+
+    const transferredNonCoin = (txBlock.objectChanges || [])
+      .filter((c: any) => c.type === 'transferred' && !c.objectType?.includes('coin::Coin'))
+      .slice(0, 5)
+
+    const allObjects = [...coinObjects, ...createdObjects, ...transferredNonCoin]
+    if (allObjects.length === 0) return { ...txBlock, enrichedObjects: new Map() }
+
+    const results = await Promise.race([
+      Promise.all(
+        allObjects.map(async (obj: any) => {
+          try {
+            const data = await Promise.race([
+              suiClient.getObject({
+                id: obj.objectId,
+                options: { showContent: true, showType: true, showDisplay: true },
+              }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)),
+            ])
+            return { objectId: obj.objectId, data }
+          } catch {
+            return null
+          }
         })
-        
-        const objectData = await Promise.race([fetchPromise, timeoutPromise])
-        console.log(`Successfully fetched object ${obj.objectId}`)
-        return { objectId: obj.objectId, data: objectData }
-      } catch (e) {
-        console.warn(`Failed to fetch object ${obj.objectId}:`, e instanceof Error ? e.message : 'Unknown error')
-        return null
-      }
-    })
-    
-    // Overall timeout for all fetches - reduced to 4 seconds
-    const allFetchesPromise = Promise.all(objectDataPromises)
-    const overallTimeoutPromise = new Promise<any[]>((_, reject) => 
-      setTimeout(() => reject(new Error('Overall timeout')), 4000)
-    )
-    
-    const objectDataResults = await Promise.race([allFetchesPromise, overallTimeoutPromise])
-    
-    const objectDataMap = new Map(
-      objectDataResults
+      ),
+      new Promise<null[]>((_, reject) =>
+        setTimeout(() => reject(new Error('Overall timeout')), 4000)
+      ),
+    ])
+
+    const enrichedObjects = new Map(
+      (results as any[])
         .filter(r => r !== null)
         .map(r => [r!.objectId, r!.data])
     )
-    
-    console.log(`Successfully enriched ${objectDataMap.size} objects`)
-    return { ...txBlock, enrichedObjects: objectDataMap }
-  } catch (e) {
-    console.warn('Failed to enrich objects, continuing without enrichment:', e instanceof Error ? e.message : 'Unknown error')
+
+    return { ...txBlock, enrichedObjects }
+  } catch {
     return { ...txBlock, enrichedObjects: new Map() }
   }
 }
 
+// ── Core parser ───────────────────────────────────────────────────────────────
+
 function parseTransaction(txBlock: any): ParsedTransaction {
   const effects = txBlock.effects
-  const objectChanges = txBlock.objectChanges || []
-  const balanceChanges = txBlock.balanceChanges || []
-  
-  // Extract sender
-  const sender = txBlock.transaction?.data?.sender || 'Unknown'
-  
-  // Extract gas information
+  const objectChanges: any[] = txBlock.objectChanges || []
+  const rawBalanceChanges: any[] = txBlock.balanceChanges || []
+
+  const sender: string = txBlock.transaction?.data?.sender || 'Unknown'
+
+  // Gas
   const gasUsed = effects?.gasUsed
-  const totalGas = gasUsed 
+  const totalGas = gasUsed
     ? BigInt(gasUsed.computationCost) + BigInt(gasUsed.storageCost) - BigInt(gasUsed.storageRebate)
     : BigInt(0)
   const gasCostSui = (Number(totalGas) / 1_000_000_000).toFixed(6)
-  
-  // Parse object changes
+
+  const success: boolean = effects?.status?.status === 'success'
+
+  // ── Object changes ────────────────────────────────────────────────────────
   const objectsCreated: ObjectChange[] = []
   const objectsDeleted: ObjectChange[] = []
   const objectsMutated: ObjectChange[] = []
   const objectsTransferred: TransferChange[] = []
-  
+
   for (const change of objectChanges) {
     if (change.type === 'created') {
-      const enrichedData = txBlock.enrichedObjects?.get(change.objectId)
-      const isNFT = isNFTObject(change.objectType, enrichedData)
-      const nftMetadata = isNFT ? extractNFTMetadata(enrichedData) : undefined
-      
-      const fullAddr = getFullAddress(change.owner)
-      
+      const enriched = txBlock.enrichedObjects?.get(change.objectId)
+      const isNFT = isNFTObject(change.objectType, enriched)
       objectsCreated.push({
         objectId: change.objectId,
         objectType: change.objectType || 'Unknown',
         version: change.version,
         digest: change.digest,
         owner: formatOwner(change.owner),
-        fullOwnerAddress: fullAddr,  // Store full address
+        fullOwnerAddress: getFullAddress(change.owner),
         isNFT,
-        nftMetadata,
+        nftMetadata: isNFT ? extractNFTMetadata(enriched) : undefined,
       })
     } else if (change.type === 'deleted') {
       objectsDeleted.push({
@@ -290,31 +235,19 @@ function parseTransaction(txBlock: any): ParsedTransaction {
         owner: formatOwner(change.owner),
       })
     } else if (change.type === 'transferred') {
-      // Extract coin information if available
       let amount: string | undefined
       let tokenSymbol: string | undefined
       let tokenDecimals: number | undefined
-      
+
       if (change.objectType?.includes('coin::Coin')) {
         const coinInfo = extractCoinInfo(change.objectType, txBlock.enrichedObjects?.get(change.objectId))
         amount = coinInfo.amount
         tokenSymbol = coinInfo.symbol
         tokenDecimals = coinInfo.decimals
       }
-      
-      // Check if this is an NFT transfer
-      const enrichedData = txBlock.enrichedObjects?.get(change.objectId)
-      const isNFT = isNFTObject(change.objectType, enrichedData)
-      const nftMetadata = isNFT ? extractNFTMetadata(enrichedData) : undefined
-      
-      console.log('Transferred object:', {
-        objectId: change.objectId,
-        objectType: change.objectType,
-        isNFT,
-        hasEnrichedData: !!enrichedData,
-        nftMetadata: nftMetadata ? 'yes' : 'no'
-      })
-      
+
+      const enriched = txBlock.enrichedObjects?.get(change.objectId)
+      const isNFT = isNFTObject(change.objectType, enriched)
       objectsTransferred.push({
         objectId: change.objectId,
         objectType: change.objectType || 'Unknown',
@@ -325,139 +258,577 @@ function parseTransaction(txBlock: any): ParsedTransaction {
         tokenSymbol,
         tokenDecimals,
         isNFT,
-        nftMetadata,
+        nftMetadata: isNFT ? extractNFTMetadata(enriched) : undefined,
       })
     }
   }
-  
-  // Extract package calls
-  const packageCalls: PackageCall[] = []
-  const transactions = txBlock.transaction?.data?.transaction?.transactions || []
-  
-  for (const tx of transactions) {
-    if (tx.MoveCall) {
-      const call = tx.MoveCall
-      packageCalls.push({
-        package: call.package,
-        module: call.module,
-        function: call.function,
-        displayName: `${call.module}::${call.function}`,
-      })
-    }
-  }
-  
-  // Create user mapping for addresses
-  const addressToUser = new Map<string, string>()
-  const userLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
-  let userIndex = 0
-  
-  const getOrCreateUserLabel = (address: string): string => {
-    if (address === 'Unknown' || address === 'Shared' || address === 'Immutable' || address.startsWith('Object(')) {
-      return address
-    }
-    if (!addressToUser.has(address)) {
-      if (userIndex < userLabels.length) {
-        addressToUser.set(address, `User ${userLabels[userIndex++]}`)
-      } else {
-        addressToUser.set(address, truncateAddress(address))
-      }
-    }
-    return addressToUser.get(address)!
-  }
-  
-  // Map sender first
-  getOrCreateUserLabel(sender)
-  
-  // Map owners of created objects (for NFT recipients)
-  for (const created of objectsCreated) {
-    if (created.isNFT && created.fullOwnerAddress && 
-        created.fullOwnerAddress !== 'Unknown' && 
-        created.fullOwnerAddress !== 'Shared' && 
-        created.fullOwnerAddress !== 'Immutable' &&
-        !created.fullOwnerAddress.startsWith('Object(')) {
-      getOrCreateUserLabel(created.fullOwnerAddress)
-    }
-  }
-  
-  // Map all involved addresses in transfers
-  for (const transfer of objectsTransferred) {
-    const fromAddr = txBlock.objectChanges?.find((c: any) => 
-      c.objectId === transfer.objectId && c.type === 'transferred'
-    )?.sender
-    const toAddr = txBlock.objectChanges?.find((c: any) => 
-      c.objectId === transfer.objectId && c.type === 'transferred'
-    )?.recipient
-    
-    if (fromAddr) {
-      const fullFrom = getFullAddress(fromAddr)
-      getOrCreateUserLabel(fullFrom)
-    }
-    if (toAddr) {
-      const fullTo = getFullAddress(toAddr)
-      getOrCreateUserLabel(fullTo)
-    }
-  }
-  
-  for (const change of balanceChanges) {
-    const addr = change.owner?.AddressOwner
-    if (addr) {
-      getOrCreateUserLabel(addr)
-    }
-  }
-  
-  // Generate human-readable summary
-  const summaryData = generateSummary({
-    sender,
-    objectsCreated,
-    objectsDeleted,
-    objectsMutated,
-    objectsTransferred,
-    packageCalls,
-    balanceChanges,
-    addressToUser,
-    rawObjectChanges: txBlock.objectChanges,
-  })
-  
-  // Generate AI-style transaction summary
-  const aiSummary = generateAISummary({
-    sender,
-    objectsCreated,
-    objectsTransferred,
-    packageCalls,
-    balanceChanges,
-    addressToUser,
-    rawObjectChanges: txBlock.objectChanges,
-  })
 
-  // Generate detailed breakdown
-  const aiBreakdown = generateAIBreakdown({
+  // ── New: events, commands, net balance changes ────────────────────────────
+  const events = parseEvents(txBlock.events || [])
+  const commands = parseCommands(txBlock.transaction?.data?.transaction?.transactions || [])
+  const netBalanceChanges = buildNetBalanceChanges(rawBalanceChanges)
+
+  // Legacy packageCalls (still used by some UI paths)
+  const packageCalls: PackageCall[] = commands
+    .filter(c => c.commandType === 'MoveCall')
+    .map(c => ({
+      package: c.package!,
+      module: c.module!,
+      function: c.function!,
+      displayName: c.displayName!,
+    }))
+
+  // ── Address mapping ───────────────────────────────────────────────────────
+  const { addressToUser, userAddressMap } = buildAddressMap(
     sender,
     objectsCreated,
+    rawBalanceChanges,
+    objectChanges,
+  )
+  const getUserLabel = (addr: string) => addressToUser.get(addr) || truncateAddress(addr)
+
+  // ── Category & narrative ──────────────────────────────────────────────────
+  const category: TransactionCategory = success
+    ? detectCategory(events, commands, objectsTransferred, objectsCreated, rawBalanceChanges)
+    : 'failed'
+
+  const narrative = buildNarrative({
+    category,
+    events,
+    commands,
+    netBalanceChanges,
+    sender,
+    getUserLabel,
     objectsTransferred,
-    packageCalls,
-    addressToUser,
-    rawObjectChanges: txBlock.objectChanges,
+    objectsCreated,
+    success,
   })
 
   return {
     digest: txBlock.digest,
     timestamp: txBlock.timestampMs ? Number(txBlock.timestampMs) : undefined,
     sender,
-    success: effects?.status?.status === 'success',
+    success,
     gasUsed: totalGas.toString(),
     gasCostSui,
+    category,
+    narrative,
+    events,
+    netBalanceChanges,
+    commands,
     objectsCreated,
     objectsDeleted,
     objectsMutated,
     objectsTransferred,
     packageCalls,
-    summary: summaryData.summary,
-    userAddressMap: summaryData.userAddressMap,
-    aiSummary,
-    aiBreakdown,
+    summary: [],
+    userAddressMap,
+    aiSummary: narrative.what,
     rawEffects: effects,
   }
 }
+
+// ── Address mapping ───────────────────────────────────────────────────────────
+
+function buildAddressMap(
+  sender: string,
+  objectsCreated: ObjectChange[],
+  rawBalanceChanges: any[],
+  rawObjectChanges: any[],
+): { addressToUser: Map<string, string>; userAddressMap: Map<string, string> } {
+  const addressToUser = new Map<string, string>()
+  const labels = ['A', 'B', 'C', 'D', 'E', 'F']
+  let idx = 0
+
+  const assign = (address: string) => {
+    if (
+      !address ||
+      address === 'Unknown' ||
+      address === 'Shared' ||
+      address === 'Immutable' ||
+      address.startsWith('Object(')
+    ) return
+
+    if (!addressToUser.has(address)) {
+      addressToUser.set(
+        address,
+        idx < labels.length ? `Wallet ${labels[idx++]}` : truncateAddress(address),
+      )
+    }
+  }
+
+  assign(sender)
+
+  for (const obj of objectsCreated) {
+    if (obj.isNFT && obj.fullOwnerAddress) assign(obj.fullOwnerAddress)
+  }
+
+  for (const change of rawObjectChanges) {
+    if (change.type === 'transferred') {
+      assign(getFullAddress(change.sender))
+      assign(getFullAddress(change.recipient))
+    }
+  }
+
+  for (const bc of rawBalanceChanges) {
+    if (bc.owner?.AddressOwner) assign(bc.owner.AddressOwner)
+  }
+
+  const userAddressMap = new Map<string, string>()
+  for (const [addr, label] of addressToUser.entries()) {
+    userAddressMap.set(label, addr)
+  }
+
+  return { addressToUser, userAddressMap }
+}
+
+// ── Event parsing ─────────────────────────────────────────────────────────────
+
+function parseEvents(rawEvents: any[]): ParsedEvent[] {
+  return rawEvents.map(e => {
+    const parts = (e.type || '').split('::')
+    return {
+      type: e.type || '',
+      eventName: parts[parts.length - 1] || 'UnknownEvent',
+      module: e.transactionModule || '',
+      packageId: e.packageId || '',
+      parsedJson: e.parsedJson || {},
+    }
+  })
+}
+
+// ── Command parsing ───────────────────────────────────────────────────────────
+
+function parseCommands(rawTxs: any[]): ParsedCommand[] {
+  return rawTxs.map((tx: any, index: number) => {
+    const key = Object.keys(tx)[0] || 'Other'
+
+    if (key === 'MoveCall') {
+      const mc = tx.MoveCall
+      const typeSymbols = (mc.type_arguments || []).map((t: string) => {
+        const parts = t.split('::')
+        return parts[parts.length - 1] || t
+      })
+      return {
+        index,
+        commandType: 'MoveCall' as const,
+        package: mc.package,
+        module: mc.module,
+        function: mc.function,
+        typeArguments: mc.type_arguments || [],
+        typeSymbols,
+        displayName: humanizeFunctionName(mc.function),
+      }
+    }
+
+    const typeMap: Record<string, ParsedCommand['commandType']> = {
+      TransferObjects: 'TransferObjects',
+      SplitCoins: 'SplitCoins',
+      MergeCoins: 'MergeCoins',
+      Publish: 'Publish',
+    }
+
+    return { index, commandType: typeMap[key] ?? ('Other' as const) }
+  })
+}
+
+// ── Net balance changes ───────────────────────────────────────────────────────
+
+function buildNetBalanceChanges(rawBalanceChanges: any[]): NetBalanceChange[] {
+  return rawBalanceChanges
+    .map((bc: any): NetBalanceChange => {
+      const coinType: string = bc.coinType || '0x2::sui::SUI'
+      const { symbol, decimals } = getTokenInfoFromType(coinType)
+      const raw = BigInt(bc.amount || 0)
+      const direction: 'in' | 'out' = raw >= 0n ? 'in' : 'out'
+      const absRaw = raw < 0n ? -raw : raw
+
+      return {
+        coinType,
+        symbol,
+        decimals,
+        rawAmount: bc.amount?.toString() || '0',
+        formattedAmount: formatCoinAmount(absRaw.toString(), decimals),
+        direction,
+      }
+    })
+    .filter(bc => {
+      // Drop dust-level SUI changes that are just gas
+      if (bc.symbol === 'SUI') {
+        return Math.abs(Number(bc.rawAmount)) / 1e9 >= 0.001
+      }
+      return true
+    })
+}
+
+function formatCoinAmount(rawAbs: string, decimals: number): string {
+  const value = Number(rawAbs) / Math.pow(10, decimals)
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(2) + 'M'
+  if (value >= 1_000) return value.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  if (value >= 1) return parseFloat(value.toFixed(4)).toString()
+  if (value >= 0.0001) return parseFloat(value.toFixed(6)).toString()
+  return value.toFixed(8)
+}
+
+// ── Category detection (event-first) ─────────────────────────────────────────
+
+function detectCategory(
+  events: ParsedEvent[],
+  commands: ParsedCommand[],
+  objectsTransferred: TransferChange[],
+  objectsCreated: ObjectChange[],
+  balanceChanges: any[],
+): TransactionCategory {
+  const names = events.map(e => e.eventName.toLowerCase())
+  const modules = events.map(e => e.module.toLowerCase())
+  const all = [...names, ...modules]
+
+  const hasFlashLoan = all.some(s =>
+    s.includes('flashloan') || s.includes('flash_loan') || s.includes('borrowed')
+  )
+  const swapCount = names.filter(n => n.includes('swap') || n.includes('swapevent')).length
+
+  if (hasFlashLoan && swapCount > 0) return 'arbitrage'
+  if (hasFlashLoan) return 'flash-loan'
+  if (swapCount > 0) return 'swap'
+
+  if (all.some(s =>
+    s.includes('liquidity') || s.includes('addlp') || s.includes('removelp') ||
+    s.includes('provide') || s.includes('withdraw_lp')
+  )) return 'liquidity'
+
+  if (all.some(s =>
+    s.includes('stake') || s.includes('unstake') || s.includes('delegat') || s.includes('staking')
+  )) return 'staking'
+
+  if (all.some(s =>
+    s.includes('vote') || s.includes('proposal') || s.includes('govern')
+  )) return 'governance'
+
+  if (all.some(s =>
+    s.includes('bridge') || s.includes('wormhole') || s.includes('portal')
+  )) return 'bridge'
+
+  // Object-change based detection
+  if (objectsCreated.some(o => o.isNFT)) return 'nft-mint'
+  if (objectsTransferred.some(o => o.isNFT)) return 'nft-transfer'
+
+  // Simple coin transfer: coin objects transferred, or 2+ addresses with balance changes
+  const hasCoinTransfer = objectsTransferred.some(o => o.objectType?.includes('coin::Coin'))
+  if (hasCoinTransfer) return 'coin-transfer'
+
+  const uniqueAddrs = new Set(
+    balanceChanges.map((b: any) => b.owner?.AddressOwner).filter(Boolean)
+  )
+  const moveCallCount = commands.filter(c => c.commandType === 'MoveCall').length
+  if (uniqueAddrs.size >= 2 && moveCallCount === 0) return 'coin-transfer'
+
+  if (moveCallCount > 0) return 'contract-call'
+  if (objectsCreated.length > 0) return 'object-creation'
+
+  return 'unknown'
+}
+
+// ── Narrative building ────────────────────────────────────────────────────────
+
+interface NarrativeInput {
+  category: TransactionCategory
+  events: ParsedEvent[]
+  commands: ParsedCommand[]
+  netBalanceChanges: NetBalanceChange[]
+  sender: string
+  getUserLabel: (addr: string) => string
+  objectsTransferred: TransferChange[]
+  objectsCreated: ObjectChange[]
+  success: boolean
+}
+
+function buildNarrative(input: NarrativeInput): TransactionNarrative {
+  const {
+    category, events, commands, netBalanceChanges,
+    sender, getUserLabel, objectsTransferred, objectsCreated, success,
+  } = input
+
+  const senderLabel = getUserLabel(sender)
+
+  if (!success) {
+    return {
+      headline: 'Failed Transaction',
+      what: `{{${senderLabel}}} attempted a transaction that did not succeed. No assets were moved.`,
+      outcome: 'No changes — transaction reverted',
+    }
+  }
+
+  const outcomeFromChanges = (): string => {
+    const parts: string[] = []
+    for (const c of netBalanceChanges) {
+      const prefix = c.direction === 'in' ? '+' : '-'
+      parts.push(`${prefix}${c.formattedAmount} ${c.symbol}`)
+    }
+    return parts.join(', ') || 'No net change'
+  }
+
+  // ── Arbitrage ──────────────────────────────────────────────────────────────
+  if (category === 'arbitrage') {
+    const swapEvents = events.filter(e =>
+      e.eventName.toLowerCase().includes('swap') || e.eventName.toLowerCase().includes('swapevent')
+    )
+    const profit = netBalanceChanges.find(c => c.direction === 'in' && c.symbol !== 'SUI')
+      ?? netBalanceChanges.find(c => c.direction === 'in')
+    const profitText = profit ? `+${profit.formattedAmount} ${profit.symbol}` : 'an unknown profit'
+    const swapCount = swapEvents.length
+
+    // Steps
+    const steps: string[] = []
+
+    const borrowEvent = events.find(e => {
+      const n = e.eventName.toLowerCase()
+      return n.includes('flashloan') || n.includes('flash_loan') || n.includes('borrowed')
+    })
+    if (borrowEvent) {
+      const qty = borrowEvent.parsedJson['borrow_quantity'] as string | undefined
+      const typeNameRaw = (borrowEvent.parsedJson['type_name'] as any)?.name as string | undefined
+      const fullType = typeNameRaw ? ('0x' + typeNameRaw) : ''
+      const { symbol: sym, decimals } = fullType ? getTokenInfoFromType(fullType) : { symbol: 'tokens', decimals: 6 }
+      const amount = qty ? formatCoinAmount(qty, decimals) : '?'
+      steps.push(`Borrowed ${amount} ${sym} via flash loan — no upfront cost required`)
+    }
+
+    swapEvents.forEach((e, i) => {
+      const dex = humanizeModuleName(e.module)
+      // Get the token types from the matching command's typeSymbols
+      const matchingCmd = commands.find(
+        c => c.commandType === 'MoveCall' && c.module === e.module
+      )
+      const typeText = matchingCmd?.typeSymbols?.length
+        ? ` — ${matchingCmd.typeSymbols.join(' → ')}`
+        : ''
+      steps.push(`Swap ${i + 1}: exchanged tokens on ${dex}${typeText}`)
+    })
+
+    steps.push(`Repaid the flash loan in full and kept ${profitText} as profit`)
+
+    return {
+      headline: 'Flash Loan Arbitrage',
+      what: `{{${senderLabel}}} borrowed tokens for free using a flash loan, instantly swapped through ${swapCount} exchange${swapCount !== 1 ? 's' : ''}, and repaid the loan in the same transaction — keeping a profit of ${profitText}.`,
+      outcome: profitText,
+      steps,
+    }
+  }
+
+  // ── Flash loan (no clear arbitrage) ───────────────────────────────────────
+  if (category === 'flash-loan') {
+    const call = commands.find(c => c.commandType === 'MoveCall')
+    const protocol = call ? humanizeModuleName(call.module ?? '') : 'a lending protocol'
+    return {
+      headline: 'Flash Loan',
+      what: `{{${senderLabel}}} took out a flash loan from ${protocol} and repaid it within the same transaction.`,
+      outcome: outcomeFromChanges(),
+    }
+  }
+
+  // ── Token swap ─────────────────────────────────────────────────────────────
+  if (category === 'swap') {
+    const swapEvents = events.filter(e =>
+      e.eventName.toLowerCase().includes('swap') || e.eventName.toLowerCase().includes('swapevent')
+    )
+    const outChange = netBalanceChanges.find(c => c.direction === 'out' && c.symbol !== 'SUI')
+      ?? netBalanceChanges.find(c => c.direction === 'out')
+    const inChange = netBalanceChanges.find(c => c.direction === 'in')
+
+    const dexModules = [...new Set(swapEvents.map(e => humanizeModuleName(e.module)))]
+    const dexText = dexModules.length ? ` on ${dexModules[0]}` : ''
+    const swapDesc = outChange && inChange
+      ? `${outChange.formattedAmount} ${outChange.symbol} for ${inChange.formattedAmount} ${inChange.symbol}`
+      : 'tokens'
+
+    const steps = swapEvents.length > 1
+      ? swapEvents.map((e, i) => `Step ${i + 1}: swapped tokens on ${humanizeModuleName(e.module)}`)
+      : undefined
+
+    return {
+      headline: swapEvents.length > 1 ? 'Multi-hop Token Swap' : 'Token Swap',
+      what: `{{${senderLabel}}} swapped ${swapDesc}${dexText}.`,
+      outcome: inChange ? `+${inChange.formattedAmount} ${inChange.symbol}` : outcomeFromChanges(),
+      steps,
+    }
+  }
+
+  // ── Coin / token transfer ──────────────────────────────────────────────────
+  if (category === 'coin-transfer') {
+    const outChange = netBalanceChanges.find(c => c.direction === 'out')
+    const coinTransfer = objectsTransferred.find(o => o.objectType?.includes('coin::Coin'))
+
+    let amount = ''
+    if (outChange) {
+      amount = `${outChange.formattedAmount} ${outChange.symbol}`
+    } else if (coinTransfer?.tokenSymbol && coinTransfer.amount) {
+      amount = `${formatCoinAmount(coinTransfer.amount, coinTransfer.tokenDecimals ?? 9)} ${coinTransfer.tokenSymbol}`
+    } else {
+      amount = 'tokens'
+    }
+
+    // Try to find the recipient address
+    const recipientRaw = coinTransfer
+      ? getFullAddress(
+          (txBlock_findTransferRecipient(coinTransfer.objectId) ?? coinTransfer.to)
+        )
+      : null
+    const recipientLabel = recipientRaw ? getUserLabel(recipientRaw) : null
+    const toText = recipientLabel ? ` to {{${recipientLabel}}}` : ''
+
+    return {
+      headline: 'Token Transfer',
+      what: `{{${senderLabel}}} sent ${amount}${toText}.`,
+      outcome: outChange ? `-${outChange.formattedAmount} ${outChange.symbol}` : `-${amount}`,
+    }
+  }
+
+  // ── NFT mint ───────────────────────────────────────────────────────────────
+  if (category === 'nft-mint') {
+    const nfts = objectsCreated.filter(o => o.isNFT)
+    const count = nfts.length
+    const firstName = nfts[0]?.nftMetadata?.name
+    const collectionName = firstName
+      ? (firstName.split('#')[0].trim() || firstName)
+      : 'NFT'
+
+    return {
+      headline: 'NFT Mint',
+      what: count === 1
+        ? `{{${senderLabel}}} minted "${collectionName}".`
+        : `{{${senderLabel}}} minted ${count} NFTs from the ${collectionName} collection.`,
+      outcome: `${count} NFT${count !== 1 ? 's' : ''} minted`,
+    }
+  }
+
+  // ── NFT transfer ───────────────────────────────────────────────────────────
+  if (category === 'nft-transfer') {
+    const nfts = objectsTransferred.filter(o => o.isNFT)
+    const count = nfts.length
+    const name = nfts[0]?.nftMetadata?.name || 'NFT'
+    const recipientLabel = nfts[0]?.to ? getUserLabel(nfts[0].to) : null
+    const toText = recipientLabel ? ` to {{${recipientLabel}}}` : ''
+
+    return {
+      headline: 'NFT Transfer',
+      what: count === 1
+        ? `{{${senderLabel}}} transferred "${name}"${toText}.`
+        : `{{${senderLabel}}} transferred ${count} NFTs${toText}.`,
+      outcome: `${count} NFT${count !== 1 ? 's' : ''} transferred`,
+    }
+  }
+
+  // ── Liquidity ──────────────────────────────────────────────────────────────
+  if (category === 'liquidity') {
+    const isAdd = events.some(e => {
+      const n = e.eventName.toLowerCase()
+      return n.includes('add') || n.includes('provide') || n.includes('deposit')
+    })
+    const call = commands.find(c => c.commandType === 'MoveCall')
+    const protocol = call ? humanizeModuleName(call.module ?? '') : 'a DEX'
+
+    return {
+      headline: isAdd ? 'Add Liquidity' : 'Remove Liquidity',
+      what: `{{${senderLabel}}} ${isAdd ? 'added liquidity to' : 'removed liquidity from'} ${protocol}.`,
+      outcome: outcomeFromChanges(),
+    }
+  }
+
+  // ── Staking ────────────────────────────────────────────────────────────────
+  if (category === 'staking') {
+    const isUnstake = events.some(e => e.eventName.toLowerCase().includes('unstake'))
+    const suiChange = netBalanceChanges.find(c => c.symbol === 'SUI')
+    const amountText = suiChange ? `${suiChange.formattedAmount} SUI` : 'SUI'
+
+    return {
+      headline: isUnstake ? 'Unstake SUI' : 'Stake SUI',
+      what: isUnstake
+        ? `{{${senderLabel}}} unstaked tokens and received them back into their wallet.`
+        : `{{${senderLabel}}} staked ${amountText} to earn staking rewards on Sui.`,
+      outcome: outcomeFromChanges(),
+    }
+  }
+
+  // ── Governance ─────────────────────────────────────────────────────────────
+  if (category === 'governance') {
+    return {
+      headline: 'Governance Vote',
+      what: `{{${senderLabel}}} participated in on-chain governance by casting a vote on a proposal.`,
+      outcome: 'Vote recorded on-chain',
+    }
+  }
+
+  // ── Bridge ─────────────────────────────────────────────────────────────────
+  if (category === 'bridge') {
+    const outChange = netBalanceChanges.find(c => c.direction === 'out')
+    const amountText = outChange ? `${outChange.formattedAmount} ${outChange.symbol}` : 'tokens'
+    return {
+      headline: 'Cross-Chain Bridge',
+      what: `{{${senderLabel}}} bridged ${amountText} to another blockchain.`,
+      outcome: outcomeFromChanges(),
+    }
+  }
+
+  // ── Generic contract call ──────────────────────────────────────────────────
+  if (category === 'contract-call') {
+    const calls = commands.filter(c => c.commandType === 'MoveCall')
+    if (calls.length > 0) {
+      const outcomeText = netBalanceChanges.length > 0 ? outcomeFromChanges() : 'State updated'
+
+      if (calls.length === 1) {
+        const call = calls[0]
+        const protocol = humanizeModuleName(call.module ?? '')
+        const fn = humanizeFunctionName(call.function ?? '')
+        const typeText = call.typeSymbols?.length ? ` with ${call.typeSymbols.join(' and ')}` : ''
+        return {
+          headline: protocol,
+          what: `{{${senderLabel}}} called "${fn}"${typeText} on ${protocol}.`,
+          outcome: outcomeText,
+        }
+      }
+
+      const protocols = [...new Set(calls.map(c => humanizeModuleName(c.module ?? '')))]
+      const protocolText = protocols.slice(0, 2).join(' and ')
+      return {
+        headline: 'Contract Interaction',
+        what: `{{${senderLabel}}} executed ${calls.length} contract calls across ${protocolText}.`,
+        outcome: outcomeText,
+        steps: calls.map(c => {
+          const fn = humanizeFunctionName(c.function ?? '')
+          const mod = humanizeModuleName(c.module ?? '')
+          const types = c.typeSymbols?.length ? ` (${c.typeSymbols.join(' → ')})` : ''
+          return `Called "${fn}${types}" on ${mod}`
+        }),
+      }
+    }
+  }
+
+  // ── Object creation ────────────────────────────────────────────────────────
+  if (category === 'object-creation') {
+    const count = objectsCreated.length
+    return {
+      headline: 'Object Creation',
+      what: `{{${senderLabel}}} created ${count} new object${count !== 1 ? 's' : ''} on Sui.`,
+      outcome: `${count} object${count !== 1 ? 's' : ''} created`,
+    }
+  }
+
+  // ── Unknown fallback ───────────────────────────────────────────────────────
+  return {
+    headline: 'Sui Transaction',
+    what: `{{${senderLabel}}} executed a transaction on Sui.`,
+    outcome: outcomeFromChanges() || 'Completed',
+  }
+}
+
+
+/** Stub: real implementation would search rawObjectChanges; we fall back to the formatted address */
+function txBlock_findTransferRecipient(_objectId: string): string | null {
+  return null
+}
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
 
 function formatOwner(owner: any): string {
   if (!owner) return 'Unknown'
@@ -480,882 +851,159 @@ function getFullAddress(owner: any): string {
 }
 
 function truncateAddress(address: string): string {
-  if (address.length <= 12) return address
+  if (!address || address.length <= 12) return address
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-function generateSummary(data: any): { summary: string[], userAddressMap: Map<string, string> } {
-  const summary: string[] = []
-  const userAddressMap = new Map<string, string>()
-  
-  // Pre-populate userAddressMap from addressToUser (inverted: label → address)
-  for (const [address, label] of data.addressToUser.entries()) {
-    userAddressMap.set(label, address)
-  }
-  
-  // Helper to get user label
-  const getUserLabel = (address: string): string => {
-    if (!address || address === 'Unknown') return 'Unknown'
-    
-    // Check if we have a mapping
-    for (const [addr, label] of data.addressToUser.entries()) {
-      if (addr === address) {
-        // Already added above, just return label
-        return label
-      }
-    }
-    
-    // Fallback
-    return truncateAddress(address)
-  }
-  
-  // Transaction sender
-  const senderLabel = getUserLabel(data.sender)
-  summary.push(`{{${senderLabel}}} initiated the transaction`)
-  
-  // Package calls
-  if (data.packageCalls.length > 0) {
-    const calls = data.packageCalls.map((c: PackageCall) => c.displayName).join(', ')
-    summary.push(`Called functions: ${calls}`)
-  }
-  
-  // NFTs created
-  const nftsCreated = data.objectsCreated.filter((obj: any) => obj.isNFT)
-  if (nftsCreated.length > 0) {
-    const count = nftsCreated.length
-    summary.push(`{{${count} NFT${count > 1 ? 's' : ''}}} created`)
-  }
-  
-  // Non-NFT objects created
-  const objectsCreated = data.objectsCreated.filter((obj: any) => !obj.isNFT)
-  if (objectsCreated.length > 0) {
-    const count = objectsCreated.length
-    summary.push(`{{${count} object${count > 1 ? 's' : ''}}} created`)
-  }
-  
-  // Objects transferred
-  if (data.objectsTransferred.length > 0) {
-    // Separate NFTs from other transfers
-    const nftTransfers = data.objectsTransferred.filter((t: any) => t.isNFT)
-    const otherTransfers = data.objectsTransferred.filter((t: any) => !t.isNFT)
-    
-    // Show NFT transfers first
-    for (const transfer of nftTransfers.slice(0, 3)) {
-      const rawChange = data.rawObjectChanges?.find((c: any) => 
-        c.objectId === transfer.objectId && c.type === 'transferred'
-      )
-      
-      let fromLabel = transfer.from
-      let toLabel = transfer.to
-      
-      if (rawChange) {
-        const fromAddr = getFullAddress(rawChange.sender)
-        const toAddr = getFullAddress(rawChange.recipient)
-        fromLabel = getUserLabel(fromAddr)
-        toLabel = getUserLabel(toAddr)
-      }
-      
-      const nftName = transfer.nftMetadata?.name || 'NFT'
-      summary.push(`{{${toLabel}}} received ${nftName} from {{${fromLabel}}}`)
-    }
-    
-    if (nftTransfers.length > 3) {
-      summary.push(`  ... and ${nftTransfers.length - 3} more NFT transfers`)
-    }
-    
-    // Show other transfers
-    for (const transfer of otherTransfers.slice(0, 3)) {
-      const typeName = extractTypeName(transfer.objectType)
-      
-      const rawChange = data.rawObjectChanges?.find((c: any) => 
-        c.objectId === transfer.objectId && c.type === 'transferred'
-      )
-      
-      let fromLabel = transfer.from
-      let toLabel = transfer.to
-      
-      if (rawChange) {
-        const fromAddr = getFullAddress(rawChange.sender)
-        const toAddr = getFullAddress(rawChange.recipient)
-        fromLabel = getUserLabel(fromAddr)
-        toLabel = getUserLabel(toAddr)
-      }
-      
-      // If it's a coin transfer with amount, show the amount
-      if (transfer.tokenSymbol && transfer.amount && transfer.tokenDecimals) {
-        const amount = (Number(transfer.amount) / Math.pow(10, transfer.tokenDecimals)).toFixed(transfer.tokenDecimals === 6 ? 2 : 4)
-        summary.push(`{{${fromLabel}}} transferred ${amount} ${transfer.tokenSymbol} to {{${toLabel}}}`)
-      } else {
-        summary.push(`{{${fromLabel}}} transferred ${typeName} to {{${toLabel}}}`)
-      }
-    }
-  }
-  
-  // Objects mutated
-  if (data.objectsMutated.length > 0) {
-    const count = data.objectsMutated.length
-    summary.push(`{{${count} object${count > 1 ? 's' : ''}}} modified`)
-  }
-  
-  // Objects deleted
-  if (data.objectsDeleted.length > 0) {
-    const count = data.objectsDeleted.length
-    summary.push(`${count} object${count > 1 ? 's' : ''} deleted`)
-  }
-  
-  // Balance changes (all token types)
-  if (data.balanceChanges && data.balanceChanges.length > 0) {
-    for (const change of data.balanceChanges.slice(0, 5)) {
-      // Get token info from coinType
-      const coinType = change.coinType || '0x2::sui::SUI'
-      const tokenInfo = getTokenInfoFromType(coinType)
-      
-      // Only show significant amounts (not gas-only changes for SUI)
-      const amount = Number(change.amount) / Math.pow(10, tokenInfo.decimals)
-      
-      // Skip tiny SUI amounts (likely just gas)
-      if (tokenInfo.symbol === 'SUI' && Math.abs(amount) < 0.01) {
-        continue
-      }
-      
-      const action = amount > 0 ? 'received' : 'sent'
-      const absAmount = Math.abs(amount).toFixed(tokenInfo.decimals === 6 ? 2 : 4)
-      const addr = change.owner?.AddressOwner || 'Unknown'
-      const userLabel = getUserLabel(addr)
-      summary.push(`{{${userLabel}}} ${action} ${absAmount} ${tokenInfo.symbol}`)
-    }
-  }
-  
-  return { summary, userAddressMap }
+/** snake_case → "Title Case" */
+function humanizeFunctionName(fnName: string): string {
+  return fnName
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function getTokenInfoFromType(coinType: string): { symbol: string, decimals: number } {
-  // Common token mappings - most comprehensive list
-  const tokenMappings: Record<string, { symbol: string, decimals: number }> = {
-    // Native SUI
+/** Returns a plain-English protocol label for a smart contract module */
+function humanizeModuleName(moduleName: string): string {
+  const lower = moduleName.toLowerCase()
+  const known: [string, string][] = [
+    ['cetus_clmm', 'Cetus DEX'],
+    ['cetus', 'Cetus DEX'],
+    ['turbos', 'Turbos DEX'],
+    ['kriya', 'Kriya DEX'],
+    ['deepbook', 'DeepBook DEX'],
+    ['aftermath', 'Aftermath Finance'],
+    ['scallop', 'Scallop Lending'],
+    ['navi', 'Navi Protocol'],
+    ['bucket', 'Bucket Protocol'],
+    ['flashloan', 'Flash Loan Protocol'],
+    ['flash_loan', 'Flash Loan Protocol'],
+    ['pool', 'Liquidity Pool'],
+    ['router', 'DEX Router'],
+    ['lending', 'Lending Protocol'],
+    ['borrow', 'Borrowing Protocol'],
+    ['dex', 'DEX'],
+    ['swap', 'Swap Protocol'],
+    ['amm', 'AMM Protocol'],
+    ['market', 'Marketplace'],
+    ['auction', 'Auction Contract'],
+    ['staking', 'Staking Protocol'],
+    ['stake', 'Staking Protocol'],
+    ['vault', 'Vault Protocol'],
+    ['bridge', 'Bridge Protocol'],
+    ['governance', 'Governance Contract'],
+    ['vote', 'Governance Contract'],
+    ['nft', 'NFT Contract'],
+    ['token', 'Token Contract'],
+    ['coin', 'Coin Contract'],
+    ['game', 'Game Contract'],
+  ]
+  for (const [key, label] of known) {
+    if (lower.includes(key)) return label
+  }
+  return humanizeFunctionName(moduleName) + ' Contract'
+}
+
+// ── Token info ────────────────────────────────────────────────────────────────
+
+function getTokenInfoFromType(coinType: string): { symbol: string; decimals: number } {
+  const known: Record<string, { symbol: string; decimals: number }> = {
     '0x2::sui::SUI': { symbol: 'SUI', decimals: 9 },
-    
-    // USDC variants
-    '0x5d4b302506645c37ff133b98c4b50a5ae14841659738d6d733d59d0d217a93bf::coin::COIN': { symbol: 'USDC', decimals: 6 },
+    // USDC (Circle native + Wormhole)
     '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC': { symbol: 'USDC', decimals: 6 },
-    
+    '0x5d4b302506645c37ff133b98c4b50a5ae14841659738d6d733d59d0d217a93bf::coin::COIN': { symbol: 'USDC', decimals: 6 },
     // USDT
     '0xc060006111016b8a020ad5b33834984a437aaa7d3c74c18e09a95d48aceab08c::coin::COIN': { symbol: 'USDT', decimals: 6 },
-    
-    // WETH (Wormhole)
+    // WETH
     '0xaf8cd5edc19c4512f4259f0bee101a40d41ebed738ade5874359610ef8eeced5::coin::COIN': { symbol: 'WETH', decimals: 8 },
-    
-    // Add more as needed
+    // CETUS
+    '0x06864a6f921804860930db6ddbe2e16acdf8504495ea7481637a1c8b9a8fe54b::cetus::CETUS': { symbol: 'CETUS', decimals: 9 },
+    // WBTC
+    '0x027792d9fed7f9844eb4839566001bb6f6cb4804f66aa2da6fe1ee242d896881::coin::COIN': { symbol: 'WBTC', decimals: 8 },
   }
-  
-  // Check known mappings
-  if (tokenMappings[coinType]) {
-    return tokenMappings[coinType]
-  }
-  
-  // For unknown tokens, try to extract symbol from the type path
+
+  if (known[coinType]) return known[coinType]
+
   const parts = coinType.split('::')
-  const lastPart = parts[parts.length - 1]?.toUpperCase() || 'TOKEN'
-  
-  // Clean up common suffixes
-  const symbol = lastPart.replace('_TOKEN', '').replace('TOKEN', '') || 'TOKEN'
-  
-  // Default to 6 decimals for unknown tokens (common for stablecoins)
-  return { symbol, decimals: 6 }
+  const last = parts[parts.length - 1]?.toUpperCase() || 'TOKEN'
+  const symbol = last.replace('_TOKEN', '').replace('TOKEN', '') || 'TOKEN'
+  // Assume 6 decimals for stablecoins, 9 for everything else
+  const decimals = ['USDC', 'USDT', 'DAI', 'BUSD', 'USDA'].includes(symbol) ? 6 : 9
+  return { symbol, decimals }
 }
 
-function extractCoinInfo(coinType: string, objectData?: any): { amount?: string, symbol: string, decimals: number } {
-  // Extract coin type from the generic parameter
+function extractCoinInfo(
+  coinType: string,
+  objectData?: any,
+): { amount?: string; symbol: string; decimals: number } {
   const match = coinType.match(/Coin<(.+)>/)
-  if (!match) return { amount: undefined, symbol: 'Unknown', decimals: 9 }
-  
-  const innerType = match[1]
-  
-  // Get token info using shared function
-  const tokenInfo = getTokenInfoFromType(innerType)
-  
-  // Try to extract amount from object data if available
-  let amount: string | undefined
-  if (objectData?.data?.content?.fields?.balance) {
-    amount = objectData.data.content.fields.balance
-  }
-  
-  return { amount, ...tokenInfo }
+  if (!match) return { symbol: 'Unknown', decimals: 9 }
+
+  const { symbol, decimals } = getTokenInfoFromType(match[1])
+  const amount = objectData?.data?.content?.fields?.balance
+
+  return { amount, symbol, decimals }
 }
+
+// ── NFT helpers ───────────────────────────────────────────────────────────────
 
 function isNFTObject(objectType: string, objectData?: any): boolean {
   if (!objectType) return false
-  
-  // Skip if it's a coin
   if (objectType.includes('coin::Coin')) return false
-  
-  // Skip dynamic_field objects (these are internal data structures, not NFTs)
-  if (objectType.includes('::dynamic_field::') || objectType.includes('::dynamic_object_field::')) {
-    console.log('Skipping dynamic field (not an NFT):', objectType)
-    return false
-  }
-  
-  // Check for display metadata (strong indicator of NFT)
-  if (objectData?.data?.display?.data) {
-    console.log('NFT detected via display metadata:', objectType)
-    return true
-  }
-  
-  // Check for explicit NFT patterns in type (case insensitive)
-  const lowerType = objectType.toLowerCase()
-  if (lowerType.includes('nft')) return true
-  
-  // Check for common NFT type patterns
-  const nftPatterns = [
-    '::nft::',
-    '::NFT::',
-    '::collectible::',
-    '::asset::',
-    '::token::Token',
-    '::item::',
-    '::agent::',  // Added for Swarm Network Agents
-    '::character::',
-    '::card::',
-    '::badge::',
-    '::license::',  // For license types
-    '::License',    // Capital L version
+  if (objectType.includes('::dynamic_field::') || objectType.includes('::dynamic_object_field::')) return false
+
+  if (objectData?.data?.display?.data) return true
+
+  const lower = objectType.toLowerCase()
+  if (lower.includes('nft')) return true
+
+  const patterns = [
+    '::nft::', '::NFT::', '::collectible::', '::asset::', '::token::Token',
+    '::item::', '::agent::', '::character::', '::card::', '::badge::', '::license::',
   ]
-  
-  if (nftPatterns.some(pattern => objectType.includes(pattern))) {
-    console.log('NFT detected via pattern:', objectType)
-    return true
-  }
-  
-  // Check if object data has typical NFT fields
+  if (patterns.some(p => objectType.includes(p))) return true
+
   const content = objectData?.data?.content?.fields
   if (content && (content.name || content.image_url || content.url || content.description)) {
-    // Has NFT-like metadata but not a coin
-    // But NOT if it's a dynamic field
-    if (!objectType.includes('::dynamic_field::')) {
-      console.log('NFT detected via content fields:', objectType)
-      return true
-    }
+    if (!objectType.includes('::dynamic_field::')) return true
   }
-  
+
   return false
 }
 
-function extractNFTMetadata(objectData?: any): { name?: string, description?: string, imageUrl?: string, attributes?: Record<string, string> } | undefined {
-  if (!objectData) {
-    console.log('No object data for NFT metadata extraction')
-    return undefined
-  }
-  
+function extractNFTMetadata(objectData?: any): {
+  name?: string; description?: string; imageUrl?: string; attributes?: Record<string, string>
+} | undefined {
+  if (!objectData) return undefined
+
   const display = objectData.data?.display?.data
   const content = objectData.data?.content?.fields
-  
-  console.log('Extracting NFT metadata:', {
-    hasDisplay: !!display,
-    hasContent: !!content,
-    displayData: display,
-    contentFields: content ? Object.keys(content) : []
-  })
-  
+
   if (!display && !content) return undefined
-  
-  // Helper to convert values to readable strings
-  const valueToString = (value: any): string => {
-    if (value === null || value === undefined) return ''
-    if (typeof value === 'string') return value
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    if (typeof value === 'object') {
-      // Try to extract meaningful data from objects
-      if (Array.isArray(value)) return value.join(', ')
-      if (value.toString && value.toString() !== '[object Object]') return value.toString()
-      // For complex objects, try to get a meaningful field or stringify
-      try {
-        return JSON.stringify(value)
-      } catch {
-        return '[Complex Object]'
-      }
-    }
-    return String(value)
+
+  const stringify = (v: any): string => {
+    if (v === null || v === undefined) return ''
+    if (typeof v === 'string') return v
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+    if (Array.isArray(v)) return v.join(', ')
+    try { return JSON.stringify(v) } catch { return '' }
   }
-  
-  // Filter out technical/internal fields that aren't real attributes
-  const excludedFields = [
-    'id', 'name', 'description', 'image_url', 'img_url', 'url', 
-    'value', 'balance', 'type', 'owner', 'version', 'digest'
-  ]
-  
+
+  const excluded = ['id', 'name', 'description', 'image_url', 'img_url', 'url',
+    'value', 'balance', 'type', 'owner', 'version', 'digest']
+
   return {
     name: display?.name || content?.name || 'NFT',
     description: display?.description || content?.description,
     imageUrl: display?.image_url || display?.img_url || content?.image_url || content?.url,
-    attributes: content ? Object.entries(content)
-      .filter(([key]) => !excludedFields.includes(key.toLowerCase()))
-      .filter(([_, value]) => value !== null && value !== undefined)
-      .reduce((acc, [key, value]) => {
-        const strValue = valueToString(value)
-        // Only include if it's not an empty string and not too long
-        if (strValue && strValue.length > 0 && strValue.length < 100) {
-          return { ...acc, [key]: strValue }
-        }
-        return acc
-      }, {} as Record<string, string>)
+    attributes: content
+      ? Object.fromEntries(
+          Object.entries(content)
+            .filter(([k]) => !excluded.includes(k.toLowerCase()))
+            .filter(([, v]) => v !== null && v !== undefined)
+            .map(([k, v]) => [k, stringify(v)])
+            .filter(([, v]) => v.length > 0 && v.length < 100)
+        )
       : undefined,
   }
-}
-
-function extractTypeName(fullType: string): string {
-  // Extract just the type name from a full type path like "0x2::coin::Coin<0x2::sui::SUI>"
-  if (!fullType) return 'Object'
-  
-  // Check for NFT-like patterns
-  if (isNFTObject(fullType)) {
-    return 'NFT'
-  }
-  
-  // Check for Coin
-  if (fullType.includes('coin::Coin')) {
-    const coinInfo = extractCoinInfo(fullType)
-    return `${coinInfo.symbol} Coin`
-  }
-  
-  // Extract the last part of the type path
-  const parts = fullType.split('::')
-  const lastPart = parts[parts.length - 1]
-  
-  // Remove generic parameters
-  const withoutGenerics = lastPart.split('<')[0]
-  
-  return withoutGenerics || 'Object'
-}
-
-function generateAIBreakdown(data: any): string[] {
-  // Generate a detailed step-by-step breakdown of what happened
-  const breakdown: string[] = []
-  
-  // Helper to get user label
-  const getUserLabel = (address: string): string => {
-    if (!address || address === 'Unknown') return 'Unknown'
-    for (const [addr, label] of data.addressToUser.entries()) {
-      if (addr === address) return label
-    }
-    return truncateAddress(address)
-  }
-  
-  const getFullAddress = (owner: any): string => {
-    if (!owner) return 'Unknown'
-    if (typeof owner === 'string') return owner
-    if (owner.AddressOwner) return owner.AddressOwner
-    if (owner.ObjectOwner) return owner.ObjectOwner
-    if (owner.Shared) return 'Shared'
-    if (owner.Immutable) return 'Immutable'
-    return 'Unknown'
-  }
-  
-  // Helper to check if NFT is "relevant" (has proper metadata/name)
-  const isRelevantNFT = (nft: any): boolean => {
-    const name = nft.nftMetadata?.name || ''
-    const objectType = nft.objectType || ''
-    
-    // Filter out generic/temporary NFTs
-    if (!name || name.toLowerCase().includes('unknown')) return false
-    if (objectType.toLowerCase().includes('temp') || objectType.toLowerCase().includes('placeholder')) return false
-    
-    return true
-  }
-  
-  const senderLabel = getUserLabel(data.sender)
-  
-  // Step 1: Package calls (what functions were called)
-  if (data.packageCalls && data.packageCalls.length > 0) {
-    // Filter to unique and important calls
-    const importantCalls = data.packageCalls.filter((call: any) => {
-      // Skip generic transfer/split coin calls
-      return !call.function.includes('transfer') && 
-             !call.function.includes('split_coin') &&
-             !call.function.includes('pay')
-    })
-    
-    if (importantCalls.length > 0) {
-      for (const call of importantCalls.slice(0, 3)) { // Max 3 calls
-        breakdown.push(`{{${senderLabel}}} called {{${call.module}::${call.function}}}`)
-      }
-    }
-  }
-  
-  // Step 2: NFTs created (minted) - only relevant ones
-  const nftsCreated = (data.objectsCreated?.filter((obj: any) => obj.isNFT && isRelevantNFT(obj)) || [])
-  const nftTransfers = (data.objectsTransferred?.filter((t: any) => t.isNFT && isRelevantNFT(t)) || [])
-  
-  if (nftsCreated.length > 0) {
-    // Group NFTs by collection
-    const collectionMap = new Map<string, any[]>()
-    for (const nft of nftsCreated) {
-      let collectionName = 'NFT'
-      
-      if (nft.nftMetadata?.name) {
-        const name = nft.nftMetadata.name
-        // Extract collection name (text before #, number, or other delimiter)
-        const splitByHash = name.split('#')[0]
-        const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-        collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-      }
-      
-      if (!collectionMap.has(collectionName)) {
-        collectionMap.set(collectionName, [])
-      }
-      collectionMap.get(collectionName)!.push(nft)
-    }
-    
-    // Show minting by collection - only if collection name is valid
-    for (const [collectionName, nfts] of collectionMap.entries()) {
-      // Skip if collection name looks like an object ID
-      if (collectionName.startsWith('0x') && collectionName.length > 50) {
-        continue
-      }
-      
-      if (nfts.length === 1) {
-        const nftName = nfts[0].nftMetadata?.name || 'NFT'
-        // Skip if name looks like an object ID
-        if (nftName.startsWith('0x') && nftName.length > 50) {
-          continue
-        }
-        breakdown.push(`{{${nftName}}} was minted`)
-      } else {
-        breakdown.push(`{{${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}}} were minted`)
-      }
-    }
-  }
-  
-  // Step 3: NFT transfers - only show transfers to non-sender recipients
-  if (nftTransfers.length > 0) {
-    // Group by sender and recipient
-    const transferMap = new Map<string, { from: string, to: string, nfts: any[] }>()
-    
-    for (const transfer of nftTransfers) {
-      const rawChange = data.rawObjectChanges?.find((c: any) => 
-        c.objectId === transfer.objectId && c.type === 'transferred'
-      )
-      const fromAddr = rawChange ? getFullAddress(rawChange.sender) : transfer.from
-      const toAddr = rawChange ? getFullAddress(rawChange.recipient) : transfer.to
-      const fromLabel = getUserLabel(fromAddr)
-      const toLabel = getUserLabel(toAddr)
-      
-      // Skip transfers to the sender themselves (internal transfers)
-      if (toAddr === data.sender) continue
-      
-      const key = `${fromLabel}->${toLabel}`
-      if (!transferMap.has(key)) {
-        transferMap.set(key, { from: fromLabel, to: toLabel, nfts: [] })
-      }
-      transferMap.get(key)!.nfts.push(transfer)
-    }
-    
-    // Show transfers
-    for (const { from, to, nfts } of transferMap.values()) {
-      if (nfts.length === 1) {
-        const nftName = nfts[0].nftMetadata?.name || 'NFT'
-        breakdown.push(`{{${nftName}}} transferred from {{${from}}} to {{${to}}}`)
-      } else {
-        // Extract collection name properly
-        let collectionName = 'NFT'
-        
-        if (nfts[0].nftMetadata?.name) {
-          const name = nfts[0].nftMetadata.name
-          const splitByHash = name.split('#')[0]
-          const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-          collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-        }
-        
-        breakdown.push(`{{${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}}} transferred from {{${from}}} to {{${to}}}`)
-      }
-    }
-  }
-  
-  // Step 4: Other objects created (non-NFT) - only if significant
-  const otherObjects = data.objectsCreated?.filter((obj: any) => !obj.isNFT) || []
-  if (otherObjects.length > 3) {
-    breakdown.push(`{{${otherObjects.length} object${otherObjects.length > 1 ? 's' : ''}}} created`)
-  }
-  
-  return breakdown
-}
-
-function generateAISummary(data: any): string {
-  // Analyze the transaction to generate a simple, high-level summary
-  
-  // Helper to get user label
-  const getUserLabel = (address: string): string => {
-    if (!address || address === 'Unknown') return 'Unknown'
-    for (const [addr, label] of data.addressToUser.entries()) {
-      if (addr === address) return label
-    }
-    return truncateAddress(address)
-  }
-  
-  // Helper to get full address from owner object
-  const getFullAddress = (owner: any): string => {
-    if (!owner) return 'Unknown'
-    if (typeof owner === 'string') return owner
-    if (owner.AddressOwner) return owner.AddressOwner
-    if (owner.ObjectOwner) return owner.ObjectOwner
-    if (owner.Shared) return 'Shared'
-    if (owner.Immutable) return 'Immutable'
-    return 'Unknown'
-  }
-  
-  // Helper to check if NFT is "relevant" (has proper metadata/name)
-  const isRelevantNFT = (nft: any): boolean => {
-    const name = nft.nftMetadata?.name || ''
-    const objectType = nft.objectType || ''
-    
-    // Filter out generic/temporary NFTs
-    if (!name || name.toLowerCase().includes('unknown')) return false
-    if (objectType.toLowerCase().includes('temp') || objectType.toLowerCase().includes('placeholder')) return false
-    
-    return true
-  }
-  
-  // Priority 1: Look for NFT transfers (most interesting!)
-  // Enhanced logic: Detect when NFTs are minted AND transferred (intent vs intermediate steps)
-  if (data.objectsTransferred && data.objectsTransferred.length > 0) {
-    const nftTransfers = data.objectsTransferred.filter((t: any) => t.isNFT && isRelevantNFT(t))
-    const nftsCreated = data.objectsCreated?.filter((obj: any) => obj.isNFT && isRelevantNFT(obj)) || []
-    
-    if (nftTransfers.length > 0) {
-      // Check if these NFTs were created in the same transaction
-      const createdNFTIds = new Set(nftsCreated.map((nft: any) => nft.objectId))
-      const mintedAndTransferred = nftTransfers.filter((t: any) => createdNFTIds.has(t.objectId))
-      
-      // If NFTs were minted and transferred, focus on the FINAL recipient (the intent)
-      if (mintedAndTransferred.length > 0) {
-        // Group by recipient to see who ended up with what
-        const recipientMap = new Map<string, any[]>()
-        for (const transfer of mintedAndTransferred) {
-          const rawChange = data.rawObjectChanges?.find((c: any) => 
-            c.objectId === transfer.objectId && c.type === 'transferred'
-          )
-          const toAddr = rawChange ? getFullAddress(rawChange.recipient) : transfer.to
-          
-          if (!recipientMap.has(toAddr)) {
-            recipientMap.set(toAddr, [])
-          }
-          recipientMap.get(toAddr)!.push(transfer)
-        }
-        
-        // Filter out the sender (sender is the one initiating, not receiving)
-        const senderAddr = data.sender
-        for (const [addr] of recipientMap.entries()) {
-          if (addr === senderAddr) {
-            recipientMap.delete(addr)
-          }
-        }
-        
-        // Find non-sender recipients
-        const recipients = Array.from(recipientMap.entries()).filter(([addr]) => addr !== senderAddr)
-        
-        if (recipients.length > 0) {
-          // Sort by count to find primary recipient
-          recipients.sort((a, b) => b[1].length - a[1].length)
-          
-          const [primaryRecipientAddr, primaryTransfers] = recipients[0]
-          const recipientLabel = getUserLabel(primaryRecipientAddr)
-          const senderLabel = getUserLabel(senderAddr)
-          
-          const count = primaryTransfers.length
-          
-          if (count === 1) {
-            const nftName = primaryTransfers[0].nftMetadata?.name || 'NFT'
-            return `{{${recipientLabel}}} received ${nftName} from {{${senderLabel}}}`
-          } else if (count > 1) {
-            // Try to get collection name from first NFT
-            const firstNFT = primaryTransfers[0]
-            let collectionName = 'NFT'
-            
-            if (firstNFT.nftMetadata?.name) {
-              // Try to extract collection name (text before #, number, or other delimiter)
-              const name = firstNFT.nftMetadata.name
-              const splitByHash = name.split('#')[0]
-              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-            }
-            
-            return `{{${recipientLabel}}} received ${count} ${collectionName}${count > 1 ? 's' : ''} from {{${senderLabel}}}`
-          }
-        }
-        
-        // Edge case: All NFTs went back to sender (self-minting)
-        if (recipientMap.has(senderAddr) && recipientMap.size === 1) {
-          const senderLabel = getUserLabel(senderAddr)
-          const transfers = recipientMap.get(senderAddr)!
-          const count = transfers.length
-          
-          if (count === 1) {
-            const nftName = transfers[0].nftMetadata?.name || 'NFT'
-            return `{{${senderLabel}}} mints ${nftName}`
-          } else {
-            const firstNFT = transfers[0]
-            let collectionName = 'NFT'
-            
-            if (firstNFT.nftMetadata?.name) {
-              const name = firstNFT.nftMetadata.name
-              const splitByHash = name.split('#')[0]
-              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-            }
-            
-            return `{{${senderLabel}}} mints ${count} ${collectionName}${count > 1 ? 's' : ''}`
-          }
-        }
-      }
-      
-      // Fallback: Regular NFT transfer logic (no minting involved)
-      // Group by recipient to see who received what
-      const recipientMap = new Map<string, any[]>()
-      for (const transfer of nftTransfers) {
-        const rawChange = data.rawObjectChanges?.find((c: any) => 
-          c.objectId === transfer.objectId && c.type === 'transferred'
-        )
-        const toAddr = rawChange ? getFullAddress(rawChange.recipient) : transfer.to
-        
-        if (!recipientMap.has(toAddr)) {
-          recipientMap.set(toAddr, [])
-        }
-        recipientMap.get(toAddr)!.push(transfer)
-      }
-      
-      // Find the recipient with the most NFTs
-      let maxRecipient = null
-      let maxCount = 0
-      for (const [addr, transfers] of recipientMap.entries()) {
-        if (transfers.length > maxCount) {
-          maxCount = transfers.length
-          maxRecipient = addr
-        }
-      }
-      
-      if (maxRecipient && maxCount > 0) {
-        const recipientLabel = getUserLabel(maxRecipient)
-        const transfers = recipientMap.get(maxRecipient)!
-        const firstTransfer = transfers[0]
-        
-        if (maxCount === 1) {
-          const nftName = firstTransfer.nftMetadata?.name || 'NFT'
-          const fromAddr = data.rawObjectChanges?.find((c: any) => 
-            c.objectId === firstTransfer.objectId && c.type === 'transferred'
-          )?.sender
-          const fromLabel = fromAddr ? getUserLabel(getFullAddress(fromAddr)) : 'Unknown'
-          return `{{${recipientLabel}}} receives ${nftName} from {{${fromLabel}}}`
-        } else {
-          // Multiple NFTs to same recipient
-          const collectionName = firstTransfer.nftMetadata?.name?.split('#')[0]?.trim() || 'NFT'
-          return `{{${recipientLabel}}} receives ${maxCount} ${collectionName}${maxCount > 1 ? 's' : ''}`
-        }
-      }
-    }
-    
-    // Priority 2: Look for token/coin transfers
-    const coinTransfers = data.objectsTransferred.filter((t: any) => 
-      t.tokenSymbol && t.amount && t.tokenSymbol !== 'SUI'
-    )
-    
-    if (coinTransfers.length > 0) {
-      // Use the first significant coin transfer
-      const transfer = coinTransfers[0]
-      const amount = transfer.amount && transfer.tokenDecimals 
-        ? (Number(transfer.amount) / Math.pow(10, transfer.tokenDecimals)).toFixed(transfer.tokenDecimals === 6 ? 2 : 4)
-        : '?'
-      
-      return `{{${transfer.from}}} sends ${amount} ${transfer.tokenSymbol} to {{${transfer.to}}}`
-    }
-  }
-  
-  // Priority 3: Look for significant balance changes (all tokens)
-  if (data.balanceChanges && data.balanceChanges.length > 0) {
-    // Group balance changes by token type
-    const tokenTransfers = new Map<string, { send: any, receive: any }>()
-    
-    for (const change of data.balanceChanges) {
-      const coinType = change.coinType || '0x2::sui::SUI'
-      const amount = Number(change.amount)
-      
-      if (!tokenTransfers.has(coinType)) {
-        tokenTransfers.set(coinType, { send: null, receive: null })
-      }
-      
-      const transfers = tokenTransfers.get(coinType)!
-      
-      if (amount < 0 && (!transfers.send || Math.abs(amount) > Math.abs(transfers.send.amount))) {
-        transfers.send = { ...change, amount }
-      }
-      if (amount > 0 && (!transfers.receive || amount > transfers.receive.amount)) {
-        transfers.receive = { ...change, amount }
-      }
-    }
-    
-    // Prioritize non-SUI tokens first
-    for (const [coinType, { send, receive }] of tokenTransfers.entries()) {
-      if (!send || !receive) continue
-      
-      const tokenInfo = getTokenInfoFromType(coinType)
-      const sendAmount = Math.abs(send.amount / Math.pow(10, tokenInfo.decimals))
-      const receiveAmount = receive.amount / Math.pow(10, tokenInfo.decimals)
-      
-      // Skip tiny SUI amounts (likely gas)
-      if (tokenInfo.symbol === 'SUI' && sendAmount < 0.1) continue
-      
-      // If amounts are close (likely a transfer), generate summary
-      if (Math.abs(sendAmount - receiveAmount) < 0.01 * sendAmount) {
-        const senderAddr = send.owner?.AddressOwner
-        const receiverAddr = receive.owner?.AddressOwner
-        
-        if (senderAddr && receiverAddr && senderAddr !== receiverAddr) {
-          const senderLabel = getUserLabel(senderAddr)
-          const receiverLabel = getUserLabel(receiverAddr)
-          const formattedAmount = sendAmount.toFixed(tokenInfo.decimals === 6 ? 2 : 4)
-          return `{{${senderLabel}}} sends ${formattedAmount} ${tokenInfo.symbol} to {{${receiverLabel}}}`
-        }
-      }
-    }
-  }
-  
-  // Priority 4: Look for other object transfers (non-NFT, non-coin)
-  if (data.objectsTransferred && data.objectsTransferred.length > 0) {
-    const transfer = data.objectsTransferred[0]
-    const typeName = extractTypeName(transfer.objectType)
-    
-    if (typeName === 'NFT' || typeName.toLowerCase().includes('nft')) {
-      return `{{${transfer.from}}} transfers an NFT to {{${transfer.to}}}`
-    }
-    
-    if (data.objectsTransferred.length === 1 && !typeName.includes('Coin')) {
-      return `{{${transfer.from}}} transfers a ${typeName} to {{${transfer.to}}}`
-    }
-    
-    const nonCoinTransfers = data.objectsTransferred.filter((t: any) => !t.tokenSymbol)
-    if (nonCoinTransfers.length > 0) {
-      return `{{${transfer.from}}} transfers ${nonCoinTransfers.length} object${nonCoinTransfers.length > 1 ? 's' : ''} to {{${transfer.to}}}`
-    }
-  }
-  
-  // Priority 5: Look at what was created (prioritize NFTs)
-  // IMPORTANT: Check who owns the created NFTs to detect the recipient!
-  if (data.objectsCreated && data.objectsCreated.length > 0) {
-    const senderLabel = getUserLabel(data.sender)
-    
-    // Check for NFTs first
-    const nfts = data.objectsCreated.filter((obj: any) => obj.isNFT && isRelevantNFT(obj))
-    if (nfts.length > 0) {
-      // Check who owns these NFTs - if not the sender, they were transferred!
-      const recipientMap = new Map<string, any[]>()
-      
-      for (const nft of nfts) {
-        const rawCreated = data.rawObjectChanges?.find((c: any) => 
-          c.objectId === nft.objectId && c.type === 'created'
-        )
-        
-        if (rawCreated && rawCreated.owner) {
-          const ownerAddr = getFullAddress(rawCreated.owner)
-          if (ownerAddr && ownerAddr !== 'Unknown' && ownerAddr !== data.sender) {
-            // NFT was created for someone else!
-            if (!recipientMap.has(ownerAddr)) {
-              recipientMap.set(ownerAddr, [])
-            }
-            recipientMap.get(ownerAddr)!.push(nft)
-          }
-        }
-      }
-      
-      // If NFTs were created for someone else, focus on the recipient
-      if (recipientMap.size > 0) {
-        // Find the recipient with the most NFTs
-        let maxRecipient = null
-        let maxCount = 0
-        for (const [addr, nftList] of recipientMap.entries()) {
-          if (nftList.length > maxCount) {
-            maxCount = nftList.length
-            maxRecipient = addr
-          }
-        }
-        
-        if (maxRecipient && maxCount > 0) {
-          const recipientLabel = getUserLabel(maxRecipient)
-          const recipientNFTs = recipientMap.get(maxRecipient)!
-          
-          if (maxCount === 1) {
-            const nftName = recipientNFTs[0].nftMetadata?.name || 'NFT'
-            return `{{${recipientLabel}}} received ${nftName} from {{${senderLabel}}}`
-          } else {
-            // Extract collection name
-            let collectionName = 'NFT'
-            if (recipientNFTs[0].nftMetadata?.name) {
-              const name = recipientNFTs[0].nftMetadata.name
-              const splitByHash = name.split('#')[0]
-              const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-              collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-            }
-            return `{{${recipientLabel}}} received ${maxCount} ${collectionName}${maxCount > 1 ? 's' : ''} from {{${senderLabel}}}`
-          }
-        }
-      }
-      
-      // Fallback: NFTs kept by sender
-      if (nfts.length === 1) {
-        const nftName = nfts[0].nftMetadata?.name || 'NFT'
-        return `{{${senderLabel}}} minted ${nftName}`
-      }
-      
-      // Extract collection name for multiple NFTs
-      let collectionName = 'NFT'
-      if (nfts[0].nftMetadata?.name) {
-        const name = nfts[0].nftMetadata.name
-        const splitByHash = name.split('#')[0]
-        const splitByNumber = name.replace(/\s*\d+\s*$/, '')
-        collectionName = splitByHash.trim() || splitByNumber.trim() || name.trim()
-      }
-      return `{{${senderLabel}}} minted ${nfts.length} ${collectionName}${nfts.length > 1 ? 's' : ''}`
-    }
-    
-    // Regular objects
-    const created = data.objectsCreated[0]
-    const typeName = extractTypeName(created.objectType)
-    
-    if (data.objectsCreated.length === 1) {
-      return `{{${senderLabel}}} creates a ${typeName}`
-    }
-    
-    return `{{${senderLabel}}} creates ${data.objectsCreated.length} new objects`
-  }
-  
-  // Priority 6: Look at package calls
-  if (data.packageCalls && data.packageCalls.length > 0) {
-    const call = data.packageCalls[0]
-    const senderLabel = getUserLabel(data.sender)
-    
-    // Interpret common function names
-    if (call.function.includes('mint')) {
-      return `{{${senderLabel}}} mints a new token or NFT`
-    }
-    if (call.function.includes('swap')) {
-      return `{{${senderLabel}}} performs a token swap`
-    }
-    if (call.function.includes('stake')) {
-      return `{{${senderLabel}}} stakes tokens`
-    }
-    if (call.function.includes('claim')) {
-      return `{{${senderLabel}}} claims rewards or tokens`
-    }
-    if (call.function.includes('deposit')) {
-      return `{{${senderLabel}}} deposits into a protocol`
-    }
-    if (call.function.includes('withdraw')) {
-      return `{{${senderLabel}}} withdraws from a protocol`
-    }
-    
-    // Generic function call
-    return `{{${senderLabel}}} calls ${call.module}::${call.function}`
-  }
-  
-  // Fallback
-  const senderLabel = getUserLabel(data.sender)
-  return `{{${senderLabel}}} executes a transaction on Sui`
 }
 

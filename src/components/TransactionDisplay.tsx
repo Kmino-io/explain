@@ -1,411 +1,599 @@
-import { ParsedTransaction } from '../types/transaction'
-import { TransactionVisualization } from './TransactionVisualization'
-import { AddressTooltip } from './AddressTooltip'
-import { ExpandableObjectList } from './ExpandableObjectList'
-import { TokenIcon } from './TokenIcon'
-import { NFTCard } from './NFTCard'
-import { 
-  CheckCircle2, 
-  XCircle, 
-  Fuel, 
-  Package, 
-  Plus, 
-  Minus, 
-  Edit, 
-  ArrowRightLeft,
-  Clock,
-  User,
-  FileText,
-  Image as ImageIcon
-} from 'lucide-react'
+import { ParsedTransaction, NetBalanceChange, TransactionCategory } from '../types/transaction'
 
-interface TransactionDisplayProps {
-  transaction: ParsedTransaction
-}
+// ── Figma assets (valid 7 days — replace with permanent hosted assets) ──────
+const imgWallet       = 'https://www.figma.com/api/mcp/asset/10929cfd-19aa-4b80-9497-beaa5824e924'
+const imgObjects      = 'https://www.figma.com/api/mcp/asset/1cc2234d-bd15-43dd-8f4d-87f681de760f'
+const imgNFT          = 'https://www.figma.com/api/mcp/asset/1584bce4-fca3-481d-a3a1-2cfc8680474e'
+const imgFailIcon     = 'https://www.figma.com/api/mcp/asset/c03ea6ee-6236-4901-9f24-9f62b9d8ab54'
+const imgArrow        = 'https://www.figma.com/api/mcp/asset/b7184fd4-1214-409d-9422-c981ebce7116'
+// Token transfer
+const imgToken        = 'https://www.figma.com/api/mcp/asset/a972889e-fdb1-44e3-bef7-3b1eabd5f7d1'
+const imgTokenArrow   = 'https://www.figma.com/api/mcp/asset/c977db98-29b0-4292-9fc5-cd4734539b7c'
+const imgCardArrowOut = 'https://www.figma.com/api/mcp/asset/0b3ad179-e538-442f-8df8-9b68126048d3'
+const imgCardArrowIn  = 'https://www.figma.com/api/mcp/asset/870909a9-3ac2-47fb-b434-7189d3f6b49c'
+// Contract interaction
+const imgContract     = 'https://www.figma.com/api/mcp/asset/1dccf9f6-d712-44c9-a56e-078210d7b42a'
+const imgContractArrow = 'https://www.figma.com/api/mcp/asset/3625b813-f8dd-47a0-a63c-c77a0bb21648'
+// Footer
+const imgYouTube  = 'https://www.figma.com/api/mcp/asset/87ccc306-cfd8-405e-be74-d5413db84dbe'
+const imgDiscord  = 'https://www.figma.com/api/mcp/asset/16a5150b-1047-4681-9dde-487e54f0130e'
+const imgLinkedIn = 'https://www.figma.com/api/mcp/asset/b2d6b5fe-cb7f-4cfd-b4a9-fae31c38401c'
+const imgTwitterX = 'https://www.figma.com/api/mcp/asset/e91235e5-e341-4eef-bd64-dc2949d9ade8'
 
-function parseSummaryItem(item: string, transaction: ParsedTransaction) {
-  // Parse items with {{...}} markers for tooltips or expandable content
-  const parts = item.split(/(\{\{[^}]+\}\})/)
-  
-  return parts.map((part, idx) => {
-    // Check if this is a marked item
-    if (part.startsWith('{{') && part.endsWith('}}')) {
-      const content = part.slice(2, -2)
-      
-      // Check if it's a user label (exists in userAddressMap)
-      const address = transaction.userAddressMap.get(content)
-      console.log('parseSummaryItem: Looking up', content, '→', address, 'Available keys:', Array.from(transaction.userAddressMap.keys()))
-      
-      if (address) {
-        return (
-          <AddressTooltip 
-            key={idx} 
-            label={content} 
-            address={address} 
-          />
-        )
-      }
-      
-      // Check if it's an object count (for expandable list)
-      const objectMatch = content.match(/^(\d+) object(s?)$/)
-      const nftMatch = content.match(/^(\d+) NFT(s?)$/)
-      
-      if (objectMatch) {
-        const count = parseInt(objectMatch[1])
-        const isCreated = item.includes('created')
-        const isMutated = item.includes('modified')
-        
-        if (isCreated && transaction.objectsCreated.filter(obj => !obj.isNFT).length === count) {
+const mono = { fontFamily: "'DM Mono', monospace" }
+
+// ── Card content types ────────────────────────────────────────────────────────
+type CardContent =
+  | { type: 'objects'; count: number }
+  | { type: 'nfts'; count: number }
+  | { type: 'token'; formattedAmount: string; symbol: string; direction: 'out' | 'in' }
+  | { type: 'wallet-action'; actionLabel: string }   // wallet doing something (arbitrage, swap, etc.)
+  | { type: 'protocol'; name: string; outcomeText: string; steps?: number }
+  | { type: 'failed' }
+  | { type: 'empty' }
+
+// ── ExplanationText: renders {{User A}} markers as blue underlined spans ──────
+
+function ExplanationText({ text, transaction }: { text: string; transaction: ParsedTransaction }) {
+  const parts = text.split(/(\{\{[^}]+\}\})/)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('{{') && part.endsWith('}}')) {
+          const label = part.slice(2, -2)
+          const address = transaction.userAddressMap.get(label)
           return (
-            <ExpandableObjectList
-              key={idx}
-              objects={transaction.objectsCreated.filter(obj => !obj.isNFT)}
-              title={content}
-              count={count}
-            />
-          )
-        } else if (isMutated && transaction.objectsMutated.length === count) {
-          return (
-            <ExpandableObjectList
-              key={idx}
-              objects={transaction.objectsMutated}
-              title={content}
-              count={count}
-            />
-          )
-        }
-      } else if (nftMatch) {
-        const count = parseInt(nftMatch[1])
-        const nfts = transaction.objectsCreated.filter(obj => obj.isNFT)
-        
-        if (nfts.length === count) {
-          return (
-            <span key={idx} className="inline-flex items-center gap-1">
-              <ImageIcon className="w-4 h-4 text-purple-400" />
-              <span className="text-purple-300 font-semibold">{content}</span>
+            <span
+              key={i}
+              className="text-[#298dff] underline decoration-solid cursor-pointer font-medium"
+              title={address}
+            >
+              {label}
             </span>
           )
         }
-      }
-      
-      // Default: just return the content
-      return <span key={idx}>{content}</span>
-    }
-    
-    // Check for token symbols in the text (e.g., "249.50 USDC", "15 SUI")
-    const tokenMatch = part.match(/(\d+\.?\d*)\s+(SUI|USDC|USDT|WETH|ETH|BTC|WBTC|[A-Z]{2,6})(?=\s|$|,|\.)/g)
-    if (tokenMatch) {
-      const subParts = part.split(/(\d+\.?\d*\s+(?:SUI|USDC|USDT|WETH|ETH|BTC|WBTC|[A-Z]{2,6})(?=\s|$|,|\.))/g)
-      return (
-        <span key={idx}>
-          {subParts.map((subPart, subIdx) => {
-            const match = subPart.match(/^(\d+\.?\d*)\s+([A-Z]{2,6})$/)
-            if (match) {
-              const [, amount, symbol] = match
-              return (
-                <span key={subIdx} className="inline-flex items-center gap-2">
-                  <span>{amount}</span>
-                  <TokenIcon symbol={symbol} className="w-6 h-6 inline-block" />
-                  <span className="font-semibold">{symbol}</span>
-                </span>
-              )
-            }
-            return <span key={subIdx}>{subPart}</span>
-          })}
-        </span>
-      )
-    }
-    
-    return <span key={idx}>{part}</span>
-  })
+        return <span key={i}>{part}</span>
+      })}
+    </>
+  )
 }
 
-export function TransactionDisplay({ transaction }: TransactionDisplayProps) {
-  const formatTimestamp = (timestamp?: number) => {
-    if (!timestamp) return 'N/A'
-    return new Date(timestamp).toLocaleString()
-  }
+// ── WalletCard ────────────────────────────────────────────────────────────────
+
+function WalletCard({ label, isError, content, linkUrl }: {
+  label: string
+  isError: boolean
+  content: CardContent
+  linkUrl?: string
+}) {
+  const borderCls  = isError ? 'border-[#ff2937]' : 'border-[#298dff]'
+  const labelColor = isError ? 'text-[#ff2937]' : 'text-[#298dff]'
+  const letter     = label.replace('Wallet ', '')
 
   return (
-    <div className="mt-8 space-y-6">
-      {/* AI Summary Card - Main highlight */}
-      <div className="bg-gradient-to-r from-sui-blue/20 to-purple-600/20 backdrop-blur-md rounded-xl p-6 shadow-2xl border-2 border-sui-blue/40">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 bg-sui-blue/30 rounded-full flex items-center justify-center">
-            <FileText className="w-5 h-5 text-sui-blue" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-300">Transaction Summary</h3>
-        </div>
-        <div className="text-2xl font-bold text-white leading-relaxed mb-4">
-          {parseSummaryItem(transaction.aiSummary, transaction)}
-        </div>
-        
-        {/* AI Breakdown - Step by step */}
-        {transaction.aiBreakdown && transaction.aiBreakdown.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-white/20">
-            <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-4">How it happened:</h4>
-            <div className="space-y-3">
-              {transaction.aiBreakdown.map((step, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-6 h-6 bg-sui-blue/20 rounded-full flex items-center justify-center">
-                    <span className="text-sui-blue text-xs font-bold">{index + 1}</span>
-                  </div>
-                  <div className="text-base text-gray-200 leading-relaxed pt-0.5">
-                    {parseSummaryItem(step, transaction)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Status and Overview Card */}
-      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Transaction Overview</h2>
-            <p className="text-sm text-gray-400 font-mono break-all">{transaction.digest}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {transaction.success ? (
-              <span className="flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-300 rounded-full text-sm font-medium">
-                <CheckCircle2 className="w-4 h-4" />
-                Success
-              </span>
-            ) : (
-              <span className="flex items-center gap-2 px-3 py-1 bg-red-500/20 text-red-300 rounded-full text-sm font-medium">
-                <XCircle className="w-4 h-4" />
-                Failed
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
-            <User className="w-5 h-5 text-sui-blue" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-gray-400">Sender</p>
-              <p className="text-sm text-white font-mono break-all">{transaction.sender}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
-            <Fuel className="w-5 h-5 text-orange-400" />
-            <div>
-              <p className="text-xs text-gray-400">Gas Used</p>
-              <p className="text-sm text-white font-semibold">{transaction.gasCostSui} SUI</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
-            <Clock className="w-5 h-5 text-purple-400" />
-            <div>
-              <p className="text-xs text-gray-400">Timestamp</p>
-              <p className="text-sm text-white">{formatTimestamp(transaction.timestamp)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Visualization - Show early for better UX */}
-      {(transaction.objectsTransferred.length > 0 || 
-        transaction.objectsCreated.filter(obj => obj.isNFT).length > 0) && (
-        <TransactionVisualization transaction={transaction} />
+    <div
+      className={`bg-[#18191c] border ${borderCls} flex flex-col gap-2 items-center justify-center p-4 overflow-hidden relative w-[225px]`}
+    >
+      {/* Label — clickable if linkUrl provided */}
+      {linkUrl ? (
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`text-[12px] text-center tracking-[-0.16px] leading-[20.8px] underline hover:opacity-70 transition-opacity ${labelColor}`}
+          style={mono}
+        >
+          {label} ↗
+        </a>
+      ) : (
+        <span className={`text-[12px] text-center tracking-[-0.16px] leading-[20.8px] ${labelColor}`} style={mono}>
+          {label}
+        </span>
       )}
 
-      {/* Human-Readable Summary */}
-      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-        <div className="flex items-center gap-2 mb-4">
-          <FileText className="w-6 h-6 text-sui-blue" />
-          <h3 className="text-xl font-bold text-white">What Happened</h3>
-        </div>
-        <div className="space-y-2">
-          {transaction.summary.map((item, index) => (
-            <div key={index} className="flex items-start gap-3 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
-              <div className="w-2 h-2 bg-sui-blue rounded-full mt-2 flex-shrink-0"></div>
-              <div className="text-gray-200">
-                {parseSummaryItem(item, transaction)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Package Calls */}
-      {transaction.packageCalls.length > 0 && (
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-          <div className="flex items-center gap-2 mb-4">
-            <Package className="w-6 h-6 text-sui-blue" />
-            <h3 className="text-xl font-bold text-white">Smart Contract Calls</h3>
+      {/* Icon */}
+      {content.type === 'token' ? (
+        <div className="relative size-[44px] shrink-0">
+          <img alt="" className="block w-full h-full object-contain" src={imgToken} />
+          <div
+            className="absolute flex items-center justify-center"
+            style={{
+              left: '57.69px', top: '19px', width: '17.96px', height: '17.3px',
+              transform: content.direction === 'out' ? 'rotate(-30deg)' : 'rotate(150deg) scaleY(-1)',
+            }}
+          >
+            <img
+              alt=""
+              className="block w-[13.8px] h-[12px] object-contain"
+              src={content.direction === 'out' ? imgCardArrowOut : imgCardArrowIn}
+            />
           </div>
-          <div className="space-y-3">
-            {transaction.packageCalls.map((call, index) => (
-              <div key={index} className="p-4 bg-white/5 rounded-lg border border-white/10">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm font-semibold text-sui-blue">{call.displayName}</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-400">Package:</span>
-                    <span className="ml-2 text-gray-200 font-mono">{call.package.slice(0, 20)}...</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Module:</span>
-                    <span className="ml-2 text-gray-200">{call.module}</span>
-                  </div>
-                </div>
+        </div>
+      ) : content.type === 'protocol' ? (
+        <div className="relative size-[44px] shrink-0">
+          <img alt="" className="block w-full h-full object-contain" src={imgContract} />
+        </div>
+      ) : content.type === 'failed' ? (
+        <div className="relative size-[44px] shrink-0">
+          <img alt="" className="block w-full h-full object-contain" src={imgFailIcon} />
+        </div>
+      ) : (
+        <div className="relative size-[44px] shrink-0">
+          <img alt="" className="absolute inset-0 w-full h-full object-contain" src={imgWallet} />
+          {/* Only show the letter for simple wallet cards, not protocol-interaction ones */}
+          {letter && content.type !== 'wallet-action' && (
+            <span
+              className={`absolute bottom-0 left-[11px] text-[13.8px] font-bold tracking-[-0.69px] leading-none ${labelColor}`}
+              style={{ fontFamily: "'TWK Everett', sans-serif" }}
+            >
+              {letter}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Content ── */}
+
+      {content.type === 'objects' && (
+        <>
+          <div className="h-[32px] w-[111px] relative shrink-0">
+            <img alt="" className="absolute block w-full h-full object-contain" src={imgObjects} />
+          </div>
+          <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
+            created <span className="underline">{content.count} object{content.count !== 1 ? 's' : ''}</span>{' '}
+            <span className="underline">↗</span>
+          </span>
+        </>
+      )}
+
+      {content.type === 'nfts' && (
+        <>
+          <div className="flex gap-2 items-center justify-center flex-wrap">
+            {Array.from({ length: Math.min(content.count, 4) }).map((_, i) => (
+              <div key={i} className="relative overflow-hidden size-[32px]">
+                <img alt="NFT" className="block w-full h-full object-contain" src={imgNFT} />
               </div>
             ))}
           </div>
-        </div>
+          <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
+            received <span className="underline">{content.count} NFT{content.count !== 1 ? 's' : ''}</span>{' '}
+            <span className="underline">↗</span>
+          </span>
+        </>
       )}
 
-      {/* Object Changes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* NFTs Transferred */}
-        {transaction.objectsTransferred.filter(obj => obj.isNFT).length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20 md:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <ImageIcon className="w-6 h-6 text-purple-400" />
-              <h3 className="text-lg font-bold text-white">NFTs Transferred</h3>
-              <span className="ml-auto text-sm bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">
-                {transaction.objectsTransferred.filter(obj => obj.isNFT).length}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {transaction.objectsTransferred.filter(obj => obj.isNFT).map((obj, index) => (
-                <NFTCard key={index} nft={obj} />
-              ))}
-            </div>
-          </div>
-        )}
+      {content.type === 'token' && (
+        <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
+          {content.direction === 'out' ? 'sends' : 'receives'}{' '}
+          <span className="underline">{content.formattedAmount} {content.symbol}</span>{' '}
+          <span className="underline">↗</span>
+        </span>
+      )}
 
-        {/* NFTs Created (only show if there are created NFTs that weren't transferred) */}
-        {transaction.objectsCreated.filter(obj => obj.isNFT).length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20 md:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <ImageIcon className="w-6 h-6 text-purple-400" />
-              <h3 className="text-lg font-bold text-white">NFTs Created</h3>
-              <span className="ml-auto text-sm bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">
-                {transaction.objectsCreated.filter(obj => obj.isNFT).length}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {transaction.objectsCreated.filter(obj => obj.isNFT).map((obj, index) => (
-                <NFTCard key={index} nft={obj} />
-              ))}
-            </div>
+      {content.type === 'wallet-action' && (
+        <>
+          <div className="bg-[rgba(41,141,255,0.5)] rounded-[48px] px-3 py-1 shrink-0 max-w-full">
+            <span className="text-[10px] text-white tracking-[-0.16px] leading-[1.3] block truncate max-w-[180px]" style={mono}>
+              {content.actionLabel}
+            </span>
           </div>
-        )}
+        </>
+      )}
 
-        {/* Non-NFT Created Objects */}
-        {transaction.objectsCreated.filter(obj => !obj.isNFT).length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-            <div className="flex items-center gap-2 mb-4">
-              <Plus className="w-6 h-6 text-green-400" />
-              <h3 className="text-lg font-bold text-white">Objects Created</h3>
-              <span className="ml-auto text-sm bg-green-500/20 text-green-300 px-2 py-1 rounded-full">
-                {transaction.objectsCreated.filter(obj => !obj.isNFT).length}
-              </span>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {transaction.objectsCreated.filter(obj => !obj.isNFT).map((obj, index) => (
-                <div key={index} className="p-3 bg-white/5 rounded-lg text-sm">
-                  <p className="text-sui-blue font-medium mb-1">{obj.objectType.split('::').pop()}</p>
-                  <p className="text-gray-400 font-mono text-xs">{obj.objectId}</p>
-                  {obj.owner && (
-                    <p className="text-gray-400 text-xs mt-1">Owner: {obj.owner}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      {content.type === 'protocol' && (
+        <>
+          <span className="text-[10px] text-white text-center leading-[1.3] font-medium" style={mono}>
+            {content.name}
+          </span>
+          <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
+            <span className="underline">{content.outcomeText}</span>{' '}
+            <span className="underline">↗</span>
+          </span>
+          {content.steps !== undefined && content.steps > 1 && (
+            <span className="text-[9px] text-[#6c7584] text-center leading-[1.3]" style={mono}>
+              {content.steps} steps
+            </span>
+          )}
+        </>
+      )}
 
-        {/* Mutated Objects */}
-        {transaction.objectsMutated.length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-            <div className="flex items-center gap-2 mb-4">
-              <Edit className="w-6 h-6 text-yellow-400" />
-              <h3 className="text-lg font-bold text-white">Objects Modified</h3>
-              <span className="ml-auto text-sm bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded-full">
-                {transaction.objectsMutated.length}
-              </span>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {transaction.objectsMutated.map((obj, index) => (
-                <div key={index} className="p-3 bg-white/5 rounded-lg text-sm">
-                  <p className="text-sui-blue font-medium mb-1">{obj.objectType.split('::').pop()}</p>
-                  <p className="text-gray-400 font-mono text-xs">{obj.objectId}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      {content.type === 'failed' && (
+        <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3] mt-auto pb-1" style={mono}>
+          transaction failed
+        </span>
+      )}
+    </div>
+  )
+}
 
-        {/* Transferred Objects */}
-        {transaction.objectsTransferred.length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-            <div className="flex items-center gap-2 mb-4">
-              <ArrowRightLeft className="w-6 h-6 text-blue-400" />
-              <h3 className="text-lg font-bold text-white">Objects Transferred</h3>
-              <span className="ml-auto text-sm bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full">
-                {transaction.objectsTransferred.length}
-              </span>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {transaction.objectsTransferred.map((obj, index) => (
-                <div key={index} className="p-3 bg-white/5 rounded-lg text-sm">
-                  <div className="flex items-center gap-2 mb-1">
-                    {obj.tokenSymbol && obj.amount && obj.tokenDecimals ? (
-                      <>
-                        <TokenIcon symbol={obj.tokenSymbol} className="w-7 h-7" />
-                        <p className="text-sui-blue font-medium text-base">
-                          {(Number(obj.amount) / Math.pow(10, obj.tokenDecimals)).toFixed(obj.tokenDecimals === 6 ? 2 : 4)} {obj.tokenSymbol}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-sui-blue font-medium">
-                        {obj.objectType.split('::').pop()}
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-gray-400 font-mono text-xs mb-2">{obj.objectId}</p>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-gray-400">{obj.from}</span>
-                    <ArrowRightLeft className="w-3 h-3 text-gray-500" />
-                    <span className="text-gray-400">{obj.to}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+// ── OutcomeRow: net balance changes shown below the diagram ───────────────────
 
-        {/* Deleted Objects */}
-        {transaction.objectsDeleted.length > 0 && (
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 shadow-2xl border border-white/20">
-            <div className="flex items-center gap-2 mb-4">
-              <Minus className="w-6 h-6 text-red-400" />
-              <h3 className="text-lg font-bold text-white">Objects Deleted</h3>
-              <span className="ml-auto text-sm bg-red-500/20 text-red-300 px-2 py-1 rounded-full">
-                {transaction.objectsDeleted.length}
-              </span>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {transaction.objectsDeleted.map((obj, index) => (
-                <div key={index} className="p-3 bg-white/5 rounded-lg text-sm">
-                  <p className="text-sui-blue font-medium mb-1">{obj.objectType.split('::').pop()}</p>
-                  <p className="text-gray-400 font-mono text-xs">{obj.objectId}</p>
-                </div>
-              ))}
-            </div>
+function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
+  if (changes.length === 0) return null
+
+  // Separate gas (small SUI outflow) from meaningful changes
+  const gasChange = changes.find(
+    c => c.symbol === 'SUI' && c.direction === 'out' && Number(c.rawAmount) / -1e9 < 0.1
+  )
+  const meaningful = changes.filter(c => c !== gasChange)
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      {meaningful.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap justify-center">
+          <span className="text-[11px] text-[#6c7584]" style={mono}>Net result:</span>
+          {meaningful.map((c, i) => {
+            const isGain = c.direction === 'in'
+            return (
+              <div
+                key={i}
+                className={`px-3 py-1 border text-[11px] ${isGain ? 'border-[#298dff] text-[#298dff]' : 'border-[#6c7584] text-[#a1a7b2]'}`}
+                style={mono}
+              >
+                {isGain ? '+' : '-'}{c.formattedAmount} {c.symbol}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {gasChange && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[#6c7584]" style={mono}>
+            Gas fee: {gasChange.formattedAmount} SUI
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── StepsBreakdown: for multi-step transactions ───────────────────────────────
+
+function StepsBreakdown({
+  steps,
+  transaction,
+}: {
+  steps: string[]
+  transaction: ParsedTransaction
+}) {
+  return (
+    <div className="w-full border border-[#1e2026] bg-[#0d0e10] p-4 flex flex-col gap-2">
+      <span className="text-[11px] text-[#6c7584] uppercase tracking-widest" style={mono}>
+        Step by step
+      </span>
+      {steps.map((step, i) => (
+        <div key={i} className="flex gap-3 items-start">
+          <span className="text-[10px] text-[#298dff] shrink-0 mt-[2px]" style={mono}>
+            {String(i + 1).padStart(2, '0')}
+          </span>
+          <span className="text-[11px] text-[#a1a7b2] leading-[1.5]" style={mono}>
+            <ExplanationText text={step} transaction={transaction} />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+
+function Footer() {
+  return (
+    <div className="bg-black px-[120px] py-6 flex flex-col gap-6 items-start">
+      <div className="flex gap-2 items-center">
+        {[imgYouTube, imgDiscord, imgLinkedIn, imgTwitterX].map((src, i) => (
+          <div key={i} className="bg-[#6c7584] flex items-center justify-center p-[7px] size-[32px] shrink-0">
+            <img alt="" className="block w-full h-full object-contain" src={src} />
           </div>
-        )}
+        ))}
+      </div>
+      <p className="text-[#6c7584] text-[13px] leading-[16.25px] whitespace-nowrap" style={{ fontFamily: 'Arial, sans-serif' }}>
+        ©2026 Kmino. All rights reserved
+      </p>
+    </div>
+  )
+}
+
+// ── Diagram builder ───────────────────────────────────────────────────────────
+
+const SUISCAN = 'https://suiscan.xyz/mainnet'
+
+type DiagramSpec = {
+  senderContent: CardContent
+  receiverContent: CardContent
+  receiverLabel: string
+  arrowSrc: string
+  senderLink: string
+  receiverLink?: string
+}
+
+function buildDiagram(tx: ParsedTransaction): DiagramSpec {
+  const wallets = Array.from(tx.userAddressMap.entries())
+  const senderEntry = wallets.find(([, addr]) => addr === tx.sender) ?? wallets[0]
+  const senderLabel = senderEntry?.[0] ?? 'Wallet A'
+  const otherLabels = wallets.filter(([l]) => l !== senderLabel).map(([l]) => l)
+
+  const senderLink = `${SUISCAN}/account/${tx.sender}`
+
+  // Helper: link to a package/object on SuiScan
+  const packageLink = (pkg?: string) =>
+    pkg ? `${SUISCAN}/object/${pkg}` : undefined
+
+  // Helper: link to a wallet address on SuiScan
+  const walletLink = (label: string) => {
+    const addr = tx.userAddressMap.get(label)
+    return addr ? `${SUISCAN}/account/${addr}` : undefined
+  }
+
+  // ── Failed ────────────────────────────────────────────────────────────────
+  if (!tx.success) {
+    return {
+      senderContent: { type: 'failed' },
+      receiverContent: { type: 'failed' },
+      receiverLabel: otherLabels[0] ?? 'Wallet B',
+      arrowSrc: imgArrow,
+      senderLink,
+    }
+  }
+
+  // ── Arbitrage ─────────────────────────────────────────────────────────────
+  if (tx.category === 'arbitrage') {
+    const swapCount = tx.events.filter(e =>
+      e.eventName.toLowerCase().includes('swap')
+    ).length
+    return {
+      senderContent: { type: 'wallet-action', actionLabel: `${swapCount}-swap arbitrage` },
+      receiverContent: {
+        type: 'protocol',
+        name: tx.narrative.headline,
+        outcomeText: tx.narrative.outcome,
+        steps: tx.narrative.steps?.length,
+      },
+      receiverLabel: 'Flash Loan Protocol',
+      arrowSrc: imgContractArrow,
+      senderLink,
+      receiverLink: packageLink(tx.packageCalls[0]?.package),
+    }
+  }
+
+  // ── Flash loan ────────────────────────────────────────────────────────────
+  if (tx.category === 'flash-loan') {
+    const call = tx.packageCalls[0]
+    const protocolName = call ? humanizeModuleName(call.module) : 'Flash Loan Protocol'
+    return {
+      senderContent: { type: 'wallet-action', actionLabel: 'flash loan' },
+      receiverContent: { type: 'protocol', name: protocolName, outcomeText: 'borrows and repays' },
+      receiverLabel: protocolName,
+      arrowSrc: imgContractArrow,
+      senderLink,
+      receiverLink: packageLink(call?.package),
+    }
+  }
+
+  // ── Swap ──────────────────────────────────────────────────────────────────
+  if (tx.category === 'swap') {
+    const outChange = tx.netBalanceChanges.find(c => c.direction === 'out' && c.symbol !== 'SUI')
+      ?? tx.netBalanceChanges.find(c => c.direction === 'out')
+    const inChange = tx.netBalanceChanges.find(c => c.direction === 'in')
+    const dexEvent = tx.events.find(e => e.eventName.toLowerCase().includes('swap'))
+    const dexLabel = dexEvent ? humanizeModuleName(dexEvent.module) : 'DEX'
+
+    return {
+      senderContent: outChange
+        ? { type: 'token', formattedAmount: outChange.formattedAmount, symbol: outChange.symbol, direction: 'out' }
+        : { type: 'wallet-action', actionLabel: 'token swap' },
+      receiverContent: inChange
+        ? { type: 'token', formattedAmount: inChange.formattedAmount, symbol: inChange.symbol, direction: 'in' }
+        : { type: 'protocol', name: dexLabel, outcomeText: 'swap executed' },
+      receiverLabel: dexLabel,
+      arrowSrc: imgTokenArrow,
+      senderLink,
+      receiverLink: packageLink(tx.packageCalls[0]?.package),
+    }
+  }
+
+  // ── Coin / token transfer ─────────────────────────────────────────────────
+  if (tx.category === 'coin-transfer') {
+    const outChange = tx.netBalanceChanges.find(c => c.direction === 'out')
+    const inChange  = tx.netBalanceChanges.find(c => c.direction === 'in')
+    const symbol = outChange?.symbol ?? 'SUI'
+    const amount = outChange?.formattedAmount ?? '?'
+    const receiverWalletLabel = otherLabels[0] ?? 'Wallet B'
+
+    return {
+      senderContent:   { type: 'token', formattedAmount: amount, symbol, direction: 'out' },
+      receiverContent: { type: 'token', formattedAmount: inChange?.formattedAmount ?? amount, symbol: inChange?.symbol ?? symbol, direction: 'in' },
+      receiverLabel: receiverWalletLabel,
+      arrowSrc: imgTokenArrow,
+      senderLink,
+      receiverLink: walletLink(receiverWalletLabel),
+    }
+  }
+
+  // ── NFT transfer ──────────────────────────────────────────────────────────
+  if (tx.category === 'nft-transfer') {
+    const nfts = tx.objectsTransferred.filter(o => o.isNFT)
+    const receiverWalletLabel = otherLabels[0] ?? 'Wallet B'
+    return {
+      senderContent:   { type: 'objects', count: tx.objectsMutated.length || 1 },
+      receiverContent: { type: 'nfts', count: nfts.length },
+      receiverLabel: receiverWalletLabel,
+      arrowSrc: imgArrow,
+      senderLink,
+      receiverLink: walletLink(receiverWalletLabel),
+    }
+  }
+
+  // ── NFT mint ──────────────────────────────────────────────────────────────
+  if (tx.category === 'nft-mint') {
+    const nfts = tx.objectsCreated.filter(o => o.isNFT)
+    return {
+      senderContent:   { type: 'objects', count: tx.objectsCreated.length },
+      receiverContent: { type: 'nfts', count: nfts.length },
+      receiverLabel: senderLabel,
+      arrowSrc: imgArrow,
+      senderLink,
+    }
+  }
+
+  // ── Generic contract call ─────────────────────────────────────────────────
+  if (tx.category === 'contract-call') {
+    const calls = tx.commands.filter(c => c.commandType === 'MoveCall')
+    const firstCall = calls[0]
+    const protocol = firstCall ? humanizeModuleName(firstCall.module ?? '') : 'Contract'
+    const typeText = firstCall?.typeSymbols?.length
+      ? firstCall.typeSymbols.join(' → ')
+      : tx.narrative.outcome
+
+    return {
+      senderContent: {
+        type: 'wallet-action',
+        actionLabel: firstCall ? humanizeFunctionName(firstCall.function ?? '') : 'contract call',
+      },
+      receiverContent: {
+        type: 'protocol',
+        name: protocol,
+        outcomeText: typeText,
+        steps: calls.length > 1 ? calls.length : undefined,
+      },
+      receiverLabel: protocol,
+      arrowSrc: imgContractArrow,
+      senderLink,
+      receiverLink: packageLink(firstCall?.package),
+    }
+  }
+
+  // ── Object creation ───────────────────────────────────────────────────────
+  if (tx.category === 'object-creation') {
+    return {
+      senderContent:   { type: 'objects', count: tx.objectsCreated.length },
+      receiverContent: { type: 'empty' },
+      receiverLabel: senderLabel,
+      arrowSrc: imgArrow,
+      senderLink,
+    }
+  }
+
+  // ── Fallback ──────────────────────────────────────────────────────────────
+  return {
+    senderContent:   { type: 'empty' },
+    receiverContent: { type: 'empty' },
+    receiverLabel: otherLabels[0] ?? 'Wallet B',
+    arrowSrc: imgArrow,
+    senderLink,
+  }
+}
+
+// ── Helper: decide which categories should show the outcome row ───────────────
+function showOutcomeRow(category: TransactionCategory): boolean {
+  return ['arbitrage', 'swap', 'flash-loan', 'liquidity', 'staking', 'bridge', 'coin-transfer'].includes(category)
+}
+
+// ── Helper: decide which categories should show the steps breakdown ───────────
+function showSteps(category: TransactionCategory): boolean {
+  return ['arbitrage', 'swap', 'contract-call'].includes(category)
+}
+
+// ── Local helpers (mirror of service helpers for display-side use) ─────────────
+function humanizeModuleName(moduleName: string): string {
+  const lower = moduleName.toLowerCase()
+  const known: [string, string][] = [
+    ['cetus_clmm', 'Cetus DEX'], ['cetus', 'Cetus DEX'], ['turbos', 'Turbos DEX'],
+    ['kriya', 'Kriya DEX'], ['deepbook', 'DeepBook DEX'], ['aftermath', 'Aftermath Finance'],
+    ['flashloan', 'Flash Loan Protocol'], ['flash_loan', 'Flash Loan Protocol'],
+    ['pool', 'Liquidity Pool'], ['router', 'DEX Router'],
+    ['lending', 'Lending Protocol'], ['borrow', 'Borrowing Protocol'],
+    ['dex', 'DEX'], ['swap', 'Swap Protocol'], ['amm', 'AMM Protocol'],
+    ['market', 'Marketplace'], ['staking', 'Staking Protocol'], ['stake', 'Staking Protocol'],
+    ['vault', 'Vault Protocol'], ['bridge', 'Bridge Protocol'],
+    ['governance', 'Governance Contract'], ['nft', 'NFT Contract'],
+  ]
+  for (const [key, label] of known) {
+    if (lower.includes(key)) return label
+  }
+  return humanizeFunctionName(moduleName) + ' Contract'
+}
+
+function humanizeFunctionName(fnName: string): string {
+  return fnName
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export function TransactionDisplay({ transaction }: { transaction: ParsedTransaction }) {
+  const wallets = Array.from(transaction.userAddressMap.entries())
+  const senderEntry = wallets.find(([, addr]) => addr === transaction.sender) ?? wallets[0]
+  const senderLabel = senderEntry?.[0] ?? 'Wallet A'
+
+  const { senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink } = buildDiagram(transaction)
+
+  const steps = transaction.narrative.steps
+  const hasSteps = steps && steps.length > 1 && showSteps(transaction.category)
+
+  return (
+    <div className="w-[1000px] max-w-full px-6 flex flex-col items-center gap-6">
+
+      {/* Narrative explanation */}
+      <p className="text-white text-[14px] text-center leading-[20.8px] tracking-[-0.16px]" style={mono}>
+        <ExplanationText text={transaction.narrative.what} transaction={transaction} />
+      </p>
+
+      {/* Diagram — items-stretch makes both cards share the height of the tallest one */}
+      <div className="flex gap-6 items-stretch justify-center py-4">
+        <WalletCard label={senderLabel} isError={!transaction.success} content={senderContent} linkUrl={senderLink} />
+
+        <div className={`self-center shrink-0 ${transaction.success ? 'h-[26px] w-[65px]' : 'flex items-center justify-center rotate-90 w-[26px] h-[26px]'}`}>
+          <img
+            alt=""
+            className="block w-full h-full object-contain"
+            src={transaction.success ? arrowSrc : imgFailIcon}
+          />
+        </div>
+
+        <WalletCard label={receiverLabel} isError={!transaction.success} content={receiverContent} linkUrl={receiverLink} />
+      </div>
+
+      {/* Transaction link */}
+      <a
+        href={`${SUISCAN}/tx/${transaction.digest}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[11px] text-[#6c7584] hover:text-[#a1a7b2] transition-colors tracking-[-0.16px]"
+        style={mono}
+      >
+        tx: {transaction.digest.slice(0, 6)}...{transaction.digest.slice(-4)} ↗
+      </a>
+
+      {/* Outcome row (net balance changes) */}
+      {showOutcomeRow(transaction.category) && transaction.netBalanceChanges.length > 0 && (
+        <OutcomeRow changes={transaction.netBalanceChanges} />
+      )}
+
+      {/* Step-by-step breakdown */}
+      {hasSteps && (
+        <StepsBreakdown steps={steps!} transaction={transaction} />
+      )}
+
+      {/* Follow-up prompt */}
+      <p className="text-white text-[14px] text-center leading-[20.8px] tracking-[-0.16px]" style={mono}>
+        What do you want to better understand next?
+      </p>
+
+      {/* Follow-up input */}
+      <div className="w-full h-[54px] flex items-center justify-center px-6">
+        <input
+          type="text"
+          placeholder="Ask about called functions, objects created, timestamp or more..."
+          className="w-full bg-transparent border-none outline-none text-center text-[14px] text-[#6c7584] placeholder-[#6c7584] caret-[#298dff] tracking-[-0.16px]"
+          style={mono}
+        />
       </div>
     </div>
   )
 }
 
+export function TransactionResultFooter() {
+  return <Footer />
+}
