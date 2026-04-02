@@ -63,6 +63,25 @@ export interface Translations {
   narrativeObjectCreation: (sender: string, count: number) => string
   narrativeObjectCreationOutcome: (count: number) => string
   narrativeUnknown: (sender: string) => string
+  // ── Role labels ────────────────────────────────────────────────────────────
+  roleSender: string
+  roleRecipient: string
+  roleProtocol: string
+  roleContract: string
+  // ── Confidence indicator ────────────────────────────────────────────────────
+  confidenceHigh: string
+  confidenceHighDesc: string
+  confidencePartial: string
+  confidencePartialDesc: string
+  confidenceComplex: string
+  confidenceComplexDesc: string
+  // ── Timestamp ───────────────────────────────────────────────────────────────
+  tsJustNow: string
+  tsMinAgo: (n: number) => string
+  tsHoursAgo: (n: number) => string
+  tsDaysAgo: (n: number) => string
+  // ── Explain another ─────────────────────────────────────────────────────────
+  explainAnother: string
   // ── Headline templates ──────────────────────────────────────────────────────
   headlineArbitrage: string
   headlineFlashLoan: string
@@ -162,6 +181,25 @@ const en: Translations = {
   narrativeObjectCreationOutcome: (n) => `${n} object${n !== 1 ? 's' : ''} created`,
   narrativeUnknown: (s) =>
     `{{${s}}} executed a transaction on Sui.`,
+  // Role labels
+  roleSender: 'Sender',
+  roleRecipient: 'Recipient',
+  roleProtocol: 'Protocol',
+  roleContract: 'Contract',
+  // Confidence
+  confidenceHigh: 'High confidence',
+  confidenceHighDesc: 'All steps identified from on-chain events.',
+  confidencePartial: 'Partial interpretation',
+  confidencePartialDesc: 'Most steps identified. Some details may be simplified.',
+  confidenceComplex: 'Complex transaction',
+  confidenceComplexDesc: 'Some steps could not be fully interpreted.',
+  // Timestamps
+  tsJustNow: 'just now',
+  tsMinAgo: (n) => `${n} min ago`,
+  tsHoursAgo: (n) => `${n}h ago`,
+  tsDaysAgo: (n) => `${n}d ago`,
+  // Explain another
+  explainAnother: 'Explain another transaction',
   // Headlines
   headlineArbitrage: 'Flash Loan Arbitrage',
   headlineFlashLoan: 'Flash Loan',
@@ -261,6 +299,25 @@ const ptBR: Translations = {
   narrativeObjectCreationOutcome: (n) => `${n} objeto${n !== 1 ? 's' : ''} criado${n !== 1 ? 's' : ''}`,
   narrativeUnknown: (s) =>
     `{{${s}}} executou uma transação na Sui.`,
+  // Role labels
+  roleSender: 'Remetente',
+  roleRecipient: 'Destinatário',
+  roleProtocol: 'Protocolo',
+  roleContract: 'Contrato',
+  // Confidence
+  confidenceHigh: 'Alta confiança',
+  confidenceHighDesc: 'Todas as etapas identificadas por eventos on-chain.',
+  confidencePartial: 'Interpretação parcial',
+  confidencePartialDesc: 'A maioria das etapas foi identificada. Alguns detalhes podem estar simplificados.',
+  confidenceComplex: 'Transação complexa',
+  confidenceComplexDesc: 'Algumas etapas não puderam ser completamente interpretadas.',
+  // Timestamps
+  tsJustNow: 'agora mesmo',
+  tsMinAgo: (n) => `há ${n} min`,
+  tsHoursAgo: (n) => `há ${n}h`,
+  tsDaysAgo: (n) => `há ${n}d`,
+  // Explain another
+  explainAnother: 'Explicar outra transação',
   // Headlines
   headlineArbitrage: 'Arbitragem com Flash Loan',
   headlineFlashLoan: 'Flash Loan',
@@ -360,6 +417,25 @@ const es: Translations = {
   narrativeObjectCreationOutcome: (n) => `${n} objeto${n !== 1 ? 's' : ''} creado${n !== 1 ? 's' : ''}`,
   narrativeUnknown: (s) =>
     `{{${s}}} ejecutó una transacción en Sui.`,
+  // Role labels
+  roleSender: 'Remitente',
+  roleRecipient: 'Destinatario',
+  roleProtocol: 'Protocolo',
+  roleContract: 'Contrato',
+  // Confidence
+  confidenceHigh: 'Alta confianza',
+  confidenceHighDesc: 'Todos los pasos identificados desde eventos on-chain.',
+  confidencePartial: 'Interpretación parcial',
+  confidencePartialDesc: 'La mayoría de los pasos fueron identificados. Algunos detalles pueden estar simplificados.',
+  confidenceComplex: 'Transacción compleja',
+  confidenceComplexDesc: 'Algunos pasos no pudieron interpretarse por completo.',
+  // Timestamps
+  tsJustNow: 'ahora mismo',
+  tsMinAgo: (n) => `hace ${n} min`,
+  tsHoursAgo: (n) => `hace ${n}h`,
+  tsDaysAgo: (n) => `hace ${n}d`,
+  // Explain another
+  explainAnother: 'Explicar otra transacción',
   // Headlines
   headlineArbitrage: 'Arbitraje con Flash Loan',
   headlineFlashLoan: 'Flash Loan',

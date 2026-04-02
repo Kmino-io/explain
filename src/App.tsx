@@ -155,10 +155,10 @@ function AppInner() {
 
       {/* Navbar */}
       <div className="relative z-50 p-5">
-        <nav className="backdrop-blur-[6px] bg-[#131518] flex items-center justify-between px-[100px] py-[11.5px]">
+        <nav className="backdrop-blur-[6px] bg-[#131518] flex items-center justify-between px-4 sm:px-10 md:px-[60px] lg:px-[100px] py-[11.5px]">
           <SuiLogo />
           <span
-            className="text-white text-[20px] font-bold tracking-wide"
+            className="hidden sm:block text-white text-[17px] md:text-[20px] font-bold tracking-wide"
             style={{ fontFamily: "'TWK Everett', sans-serif" }}
           >
             {t.appTitle}
@@ -166,16 +166,16 @@ function AppInner() {
           {/* Language switcher */}
           <div className="relative">
             <button
-              className="flex items-center gap-2 cursor-pointer"
+              className="flex items-center gap-1 sm:gap-2 cursor-pointer"
               onClick={() => setLangOpen(o => !o)}
             >
               <span
-                className="text-white text-[16px]"
+                className="text-white text-[13px] sm:text-[16px]"
                 style={{ fontFamily: "'DM Mono', monospace" }}
               >
                 {LANGUAGE_LABELS[language]}
               </span>
-              <ChevronDown className={`w-5 h-5 text-white transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 sm:w-5 sm:h-5 text-white transition-transform ${langOpen ? 'rotate-180' : ''}`} />
             </button>
             {langOpen && (
               <div className="absolute right-0 top-full mt-2 bg-[#131518] border border-[#1e2026] z-50 min-w-[160px]">
@@ -263,8 +263,12 @@ function AppInner() {
 
         {/* Transaction result */}
         {transaction && !loading && (
-          <div className="flex items-start justify-center h-full overflow-y-auto py-10">
-            <TransactionDisplay transaction={transaction} />
+          <div className="flex items-start justify-center h-full overflow-y-auto py-6 md:py-10">
+            <TransactionDisplay
+              transaction={transaction}
+              onNewTransaction={handleFetchTransaction}
+              onError={setError}
+            />
           </div>
         )}
       </div>

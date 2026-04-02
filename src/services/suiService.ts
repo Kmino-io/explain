@@ -9,6 +9,7 @@ import {
   ParsedCommand,
   TransactionCategory,
   TransactionNarrative,
+  ConfidenceLevel,
 } from '../types/transaction'
 import { Language, Translations, allTranslations } from '../i18n'
 
@@ -288,10 +289,12 @@ function parseTransaction(txBlock: any, language: Language = 'en'): ParsedTransa
   )
   const getUserLabel = (addr: string) => addressToUser.get(addr) || truncateAddress(addr)
 
-  // ── Category & narrative ──────────────────────────────────────────────────
+  // ── Category, confidence & narrative ─────────────────────────────────────
   const category: TransactionCategory = success
     ? detectCategory(events, commands, objectsTransferred, objectsCreated, rawBalanceChanges)
     : 'failed'
+
+  const confidence = computeConfidence(category, events, commands)
 
   const narrative = buildNarrative({
     category,
@@ -314,6 +317,7 @@ function parseTransaction(txBlock: any, language: Language = 'en'): ParsedTransa
     gasUsed: totalGas.toString(),
     gasCostSui,
     category,
+    confidence,
     narrative,
     events,
     netBalanceChanges,
@@ -529,6 +533,24 @@ function detectCategory(
   if (objectsCreated.length > 0) return 'object-creation'
 
   return 'unknown'
+}
+
+// ── Confidence ────────────────────────────────────────────────────────────────
+
+function computeConfidence(
+  category: TransactionCategory,
+  events: ParsedEvent[],
+  commands: ParsedCommand[],
+): ConfidenceLevel {
+  if (category === 'failed') return 'high'
+  const highCategories: TransactionCategory[] = [
+    'arbitrage', 'swap', 'coin-transfer', 'nft-mint', 'nft-transfer',
+    'staking', 'governance', 'bridge',
+  ]
+  if (highCategories.includes(category) && events.length > 0) return 'high'
+  const partialCategories: TransactionCategory[] = ['flash-loan', 'liquidity', 'contract-call']
+  if (partialCategories.includes(category) && commands.some(c => c.commandType === 'MoveCall')) return 'partial'
+  return 'complex'
 }
 
 // ── Narrative building ────────────────────────────────────────────────────────
