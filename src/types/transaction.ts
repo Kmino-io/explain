@@ -97,6 +97,9 @@ export interface PackageCall {
   displayName: string
 }
 
+// ── Confidence level ──────────────────────────────────────────────────────────
+export type ConfidenceLevel = 'high' | 'partial' | 'complex'
+
 // ── Main type ─────────────────────────────────────────────────────────────────
 export interface ParsedTransaction {
   digest: string
@@ -108,6 +111,7 @@ export interface ParsedTransaction {
 
   // Rich data layer
   category: TransactionCategory
+  confidence: ConfidenceLevel
   narrative: TransactionNarrative
   events: ParsedEvent[]
   netBalanceChanges: NetBalanceChange[]

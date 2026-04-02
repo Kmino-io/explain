@@ -1,0 +1,9 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 38 35.1774" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="icon_wallet">
+<rect id="Rectangle 63" x="9.96774" y="1.50004" width="18.0645" height="7.90323" fill="var(--fill-0, #298DFF)"/>
+<path id="Vector 94" d="M1.78226 6.29842L9.68548 5.45165L9.96774 9.68552L4.60484 9.40326L1.78226 8.55649V6.29842Z" fill="var(--fill-0, white)"/>
+<path id="Vector 95" d="M28.0323 9.40326V4.04036L32.5484 4.32262V9.40326H28.0323Z" fill="var(--fill-0, white)"/>
+<path id="Rectangle 35" d="M1.5 7.99194V33.6774H36.5V9.40323H32.5484M1.5 7.99194L3.19355 9.40323H9.96774M1.5 7.99194V6.01613L9.96774 5.40029M32.5484 9.40323V3.75806L28.0323 4.08651M32.5484 9.40323H28.0323M9.96774 9.40323H28.0323M9.96774 9.40323V6.01613M28.0323 9.40323V6.01613M9.96774 5.40029V1.5H14.4839M9.96774 5.40029V6.01613M28.0323 4.08651V1.5H23.5161M28.0323 4.08651V6.01613M14.4839 1.5L13.6371 5.40029L9.96774 6.01613M14.4839 1.5H23.5161M23.5161 1.5L24.0806 5.40029L28.0323 6.01613" stroke="var(--stroke-0, white)" stroke-width="3"/>
+<rect id="Rectangle 38" x="29.5" y="19.5" width="7" height="3" stroke="var(--stroke-0, white)" stroke-width="3"/>
+</g>
+</svg>
