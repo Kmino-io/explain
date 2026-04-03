@@ -196,10 +196,10 @@ function AppInner() {
       </div>
 
       {/* Main content */}
-      <div className="relative z-10" style={{ height: 'calc(100vh - 76px)' }}>
+      <div className="relative z-10 min-h-[calc(100vh-76px)]">
         {/* Empty state: centered input */}
         {!loading && !error && !transaction && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center min-h-[calc(100vh-76px)]">
             <div className="w-[1000px] max-w-full px-6">
               <TransactionInput
                 onSubmit={handleFetchTransaction}
@@ -212,7 +212,7 @@ function AppInner() {
 
         {/* Loading state: centered message + dots */}
         {loading && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center min-h-[calc(100vh-76px)]">
             <div className="flex flex-col items-center gap-4 w-[1000px] max-w-full px-6">
               <p
                 className="text-[#298dff] text-[14px] text-center leading-[20.8px] tracking-[-0.16px]"
@@ -232,7 +232,7 @@ function AppInner() {
 
         {/* Error state */}
         {error && !loading && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center min-h-[calc(100vh-76px)]">
             <div className="flex flex-col items-center gap-6 w-[1000px] max-w-full px-6">
               <TransactionInput
                 onSubmit={handleFetchTransaction}
@@ -263,7 +263,7 @@ function AppInner() {
 
         {/* Transaction result */}
         {transaction && !loading && (
-          <div className="flex items-start justify-center h-full overflow-y-auto py-6 md:py-10">
+          <div className="flex items-start justify-center py-6 md:py-10">
             <TransactionDisplay
               transaction={transaction}
               onNewTransaction={handleFetchTransaction}
