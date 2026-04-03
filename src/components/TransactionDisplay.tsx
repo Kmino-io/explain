@@ -22,6 +22,20 @@ const imgTwitterX = '../../public/imgTwitterX.svg'
 
 const mono = { fontFamily: "'DM Mono', monospace" }
 
+// ── Known protocol registry ───────────────────────────────────────────────────
+
+const KNOWN_PROTOCOL_KEYS = [
+  'cetus_clmm', 'cetus', 'turbos', 'kriya', 'deepbook', 'aftermath',
+  'flashloan', 'flash_loan', 'pool', 'router', 'lending', 'borrow',
+  'dex', 'swap', 'amm', 'market', 'staking', 'stake', 'vault',
+  'bridge', 'governance', 'nft',
+]
+
+function isKnownProtocol(moduleName: string): boolean {
+  const lower = moduleName.toLowerCase()
+  return KNOWN_PROTOCOL_KEYS.some(key => lower.includes(key))
+}
+
 // ── Card content types ────────────────────────────────────────────────────────
 type CardContent =
   | { type: 'objects'; count: number }
@@ -58,14 +72,59 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
   )
 }
 
+// ── ContractTrustBadge ────────────────────────────────────────────────────────
+
+function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
+  if (trust === 'wallet') return null
+
+  const isKnown = trust === 'known'
+  return (
+    <div className="relative group cursor-default">
+      <div className={`flex items-center gap-[5px] px-2 py-[3px] border ${isKnown ? 'border-[#298dff]/25' : 'border-[#f5a623]/30'}`}>
+        <div className={`size-[5px] rounded-full shrink-0 ${isKnown ? 'bg-[#298dff]' : 'bg-[#f5a623]'}`} />
+        <span className={`text-[9px] tracking-[0.08em] uppercase ${isKnown ? 'text-[#298dff]' : 'text-[#f5a623]'}`} style={mono}>
+          {isKnown ? 'Verified' : 'Unverified'}
+        </span>
+      </div>
+
+      {/* Tooltip */}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 w-[220px]">
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0
+          border-l-[5px] border-l-transparent
+          border-r-[5px] border-r-transparent
+          border-t-[5px] border-t-[#1e2026]"
+        />
+        <div className={`bg-[#0d0e10] border p-3 flex flex-col gap-1 ${isKnown ? 'border-[#1e2026]' : 'border-[#f5a623]/20]'}`}>
+          {isKnown ? (
+            <>
+              <span className="text-[10px] text-[#298dff] font-medium" style={mono}>Recognized protocol</span>
+              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>
+                This contract matches a known DeFi protocol on Sui.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-[#f5a623] font-medium" style={mono}>Unverified contract</span>
+              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>
+                This contract isn't in our list of known protocols. Double-check the address before trusting it.
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── WalletCard ────────────────────────────────────────────────────────────────
 
-function WalletCard({ label, isError, content, linkUrl, roleLabel, t }: {
+function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
   label: string
   isError: boolean
   content: CardContent
   linkUrl?: string
   roleLabel: string
+  trust?: TrustLevel
   t: ReturnType<typeof useT>['t']
 }) {
   const borderCls  = isError ? 'border-[#ff2937]' : 'border-[#298dff]'
@@ -74,12 +133,15 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, t }: {
 
   return (
     <div
-      className={`bg-[#18191c] border ${borderCls} flex flex-col gap-2 items-center justify-center p-4 overflow-hidden relative w-full max-w-[300px] md:w-[225px] md:max-w-none`}
+      className={`bg-[#18191c] border ${borderCls} flex flex-col gap-2 items-center justify-center p-4 relative w-full max-w-[300px] md:w-[225px] md:max-w-none`}
     >
       {/* Role label */}
       <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>
         {roleLabel}
       </span>
+
+      {/* Trust badge — only for contracts/protocols */}
+      {trust && trust !== 'wallet' && <ContractTrustBadge trust={trust} />}
 
       {/* Label — clickable if linkUrl provided */}
       {linkUrl ? (
@@ -306,6 +368,8 @@ function Footer() {
 
 const SUISCAN = 'https://suiscan.xyz/mainnet'
 
+type TrustLevel = 'known' | 'unknown' | 'wallet'
+
 type DiagramSpec = {
   senderContent: CardContent
   receiverContent: CardContent
@@ -314,6 +378,7 @@ type DiagramSpec = {
   senderLink: string
   receiverLink?: string
   receiverRole: 'recipient' | 'protocol' | 'contract' | 'same'
+  receiverTrust?: TrustLevel
 }
 
 function buildDiagram(tx: ParsedTransaction): DiagramSpec {
@@ -351,6 +416,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
     const swapCount = tx.events.filter(e =>
       e.eventName.toLowerCase().includes('swap')
     ).length
+    const arbModule = tx.packageCalls[0]?.module ?? ''
     return {
       senderContent: { type: 'wallet-action', actionLabel: `${swapCount}-swap arbitrage` },
       receiverContent: {
@@ -364,6 +430,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
       senderLink,
       receiverLink: packageLink(tx.packageCalls[0]?.package),
       receiverRole: 'protocol',
+      receiverTrust: isKnownProtocol(arbModule) ? 'known' : 'unknown',
     }
   }
 
@@ -379,6 +446,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
       senderLink,
       receiverLink: packageLink(call?.package),
       receiverRole: 'protocol',
+      receiverTrust: call ? (isKnownProtocol(call.module) ? 'known' : 'unknown') : 'unknown',
     }
   }
 
@@ -389,6 +457,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
     const inChange = tx.netBalanceChanges.find(c => c.direction === 'in')
     const dexEvent = tx.events.find(e => e.eventName.toLowerCase().includes('swap'))
     const dexLabel = dexEvent ? humanizeModuleName(dexEvent.module) : 'DEX'
+    const swapModule = dexEvent?.module ?? tx.packageCalls[0]?.module ?? ''
 
     return {
       senderContent: outChange
@@ -402,6 +471,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
       senderLink,
       receiverLink: packageLink(tx.packageCalls[0]?.package),
       receiverRole: 'protocol',
+      receiverTrust: isKnownProtocol(swapModule) ? 'known' : 'unknown',
     }
   }
 
@@ -460,6 +530,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
     const typeText = firstCall?.typeSymbols?.length
       ? firstCall.typeSymbols.join(' → ')
       : tx.narrative.outcome
+    const contractModule = firstCall?.module ?? ''
 
     return {
       senderContent: {
@@ -477,6 +548,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
       senderLink,
       receiverLink: packageLink(firstCall?.package),
       receiverRole: 'contract',
+      receiverTrust: isKnownProtocol(contractModule) ? 'known' : 'unknown',
     }
   }
 
@@ -636,7 +708,7 @@ export function TransactionDisplay({
   const senderEntry = wallets.find(([, addr]) => addr === transaction.sender) ?? wallets[0]
   const senderLabel = senderEntry?.[0] ?? 'Wallet A'
 
-  const { senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink, receiverRole } = buildDiagram(transaction)
+  const { senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink, receiverRole, receiverTrust } = buildDiagram(transaction)
 
   const steps = transaction.narrative.steps
   const hasSteps = steps && steps.length > 1 && showSteps(transaction.category)
@@ -695,6 +767,7 @@ export function TransactionDisplay({
           content={receiverContent}
           linkUrl={receiverLink}
           roleLabel={roleLabel(receiverRole)}
+          trust={receiverTrust}
           t={t}
         />
       </div>
