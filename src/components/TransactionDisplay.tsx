@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ParsedTransaction, NetBalanceChange, TransactionCategory } from '../types/transaction'
 import { useT, Language } from '../i18n'
 import { TransactionInput } from './TransactionInput'
@@ -337,6 +338,217 @@ function StepsBreakdown({
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── QuickFactsSection ─────────────────────────────────────────────────────────
+
+function truncateAddr(addr: string) {
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const toggle = (key: string) => setOpen(o => (o === key ? null : key))
+  const { t } = useT()
+
+  const moveCalls = transaction.commands.filter(c => c.commandType === 'MoveCall')
+  const addresses = Array.from(transaction.userAddressMap.entries())
+  const created   = transaction.objectsCreated
+  const events    = transaction.events
+
+  type Topic = { key: string; label: string; render: () => JSX.Element }
+  const topics: Topic[] = []
+
+  // ── Functions called ──────────────────────────────────────────────────────
+  if (moveCalls.length > 0) {
+    topics.push({
+      key: 'functions',
+      label: 'Functions called',
+      render: () => (
+        <div className="flex flex-col gap-3">
+          {moveCalls.map((c, i) => (
+            <div key={i} className="flex flex-col gap-[3px]">
+              <span className="text-[11px] text-[#a1a7b2]" style={mono}>
+                <span className="text-[#298dff]">{c.module}</span>
+                <span className="text-[#6c7584]">::</span>
+                <span className="text-white">{c.function}</span>
+                {c.typeSymbols && c.typeSymbols.length > 0 && (
+                  <span className="text-[#6c7584]"> {'<'}{c.typeSymbols.join(', ')}{'>'}
+                  </span>
+                )}
+              </span>
+              {c.package && (
+                <a
+                  href={`${SUISCAN}/object/${c.package}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-[#6c7584] hover:text-[#a1a7b2] transition-colors"
+                  style={mono}
+                >
+                  pkg: {truncateAddr(c.package)} ↗
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      ),
+    })
+  }
+
+  // ── Addresses involved ────────────────────────────────────────────────────
+  if (addresses.length > 0) {
+    topics.push({
+      key: 'addresses',
+      label: 'Addresses involved',
+      render: () => (
+        <div className="flex flex-col gap-2">
+          {addresses.map(([label, addr]) => (
+            <div key={label} className="flex items-center gap-3 flex-wrap">
+              <span className="text-[10px] text-[#6c7584] w-[70px] shrink-0" style={mono}>{label}</span>
+              <a
+                href={`${SUISCAN}/account/${addr}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors font-mono"
+                style={mono}
+              >
+                {truncateAddr(addr)} ↗
+              </a>
+              <span className="text-[10px] text-[#6c7584] hidden sm:inline break-all" style={mono}>
+                {addr}
+              </span>
+            </div>
+          ))}
+        </div>
+      ),
+    })
+  }
+
+  // ── Objects created ───────────────────────────────────────────────────────
+  if (created.length > 0) {
+    topics.push({
+      key: 'objects',
+      label: `Objects created (${created.length})`,
+      render: () => (
+        <div className="flex flex-col gap-2">
+          {created.map((obj, i) => {
+            const typeParts = obj.objectType.split('::')
+            const shortType = typeParts.slice(-2).join('::')
+            return (
+              <div key={i} className="flex items-start gap-3 flex-wrap">
+                <a
+                  href={`${SUISCAN}/object/${obj.objectId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors shrink-0"
+                  style={mono}
+                >
+                  {truncateAddr(obj.objectId)} ↗
+                </a>
+                <span className="text-[10px] text-[#6c7584]" style={mono}>{shortType}</span>
+              </div>
+            )
+          })}
+        </div>
+      ),
+    })
+  }
+
+  // ── Events emitted ────────────────────────────────────────────────────────
+  if (events.length > 0) {
+    topics.push({
+      key: 'events',
+      label: `Events emitted (${events.length})`,
+      render: () => (
+        <div className="flex flex-col gap-2">
+          {events.map((ev, i) => (
+            <div key={i} className="flex items-start gap-3 flex-wrap">
+              <span className="text-[11px] text-[#298dff]" style={mono}>{ev.eventName}</span>
+              <span className="text-[10px] text-[#6c7584]" style={mono}>{ev.module}</span>
+            </div>
+          ))}
+        </div>
+      ),
+    })
+  }
+
+  // ── Gas details ───────────────────────────────────────────────────────────
+  topics.push({
+    key: 'gas',
+    label: 'Gas details',
+    render: () => (
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-3 items-center">
+          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Total cost</span>
+          <span className="text-[11px] text-[#a1a7b2]" style={mono}>{transaction.gasCostSui} SUI</span>
+        </div>
+        {transaction.gasUsed && (
+          <div className="flex gap-3 items-center">
+            <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Computation</span>
+            <span className="text-[11px] text-[#a1a7b2]" style={mono}>{transaction.gasUsed}</span>
+          </div>
+        )}
+        <div className="flex gap-3 items-center">
+          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Paid by</span>
+          <a
+            href={`${SUISCAN}/account/${transaction.sender}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors"
+            style={mono}
+          >
+            {truncateAddr(transaction.sender)} ↗
+          </a>
+        </div>
+        <p className="text-[10px] text-[#6c7584]/60 mt-1 leading-[1.5]" style={mono}>
+          Gas on Sui covers computation and storage. Unused storage deposits are refunded.
+        </p>
+      </div>
+    ),
+  })
+
+  if (topics.length === 0) return null
+
+  const activePanel = topics.find(t => t.key === open)
+
+  return (
+    <div className="w-full flex flex-col items-center gap-4">
+      <p className="text-white text-[14px] text-center leading-[20.8px] tracking-[-0.16px]" style={mono}>
+        {t.followUpPrompt}
+      </p>
+
+      {/* Topic chips */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        {topics.map(topic => {
+          const isActive = open === topic.key
+          return (
+            <button
+              key={topic.key}
+              onClick={() => toggle(topic.key)}
+              className={`px-3 py-[5px] text-[10px] border tracking-[-0.08px] transition-colors ${
+                isActive
+                  ? 'border-[#298dff] text-[#298dff] bg-[#298dff]/5'
+                  : 'border-[#1e2026] text-[#6c7584] hover:border-[#298dff]/40 hover:text-[#a1a7b2]'
+              }`}
+              style={mono}
+            >
+              {topic.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Expanded panel */}
+      {activePanel && (
+        <div className="w-full border border-[#1e2026] bg-[#0d0e10] p-5 flex flex-col gap-3">
+          <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.15em]" style={mono}>
+            {activePanel.label}
+          </span>
+          {activePanel.render()}
+        </div>
+      )}
     </div>
   )
 }
@@ -821,19 +1033,8 @@ export function TransactionDisplay({
         <StepsBreakdown steps={steps!} transaction={transaction} />
       )}
 
-      {/* ── Follow-up prompt ─────────────────────────────────────────────────── */}
-      <p className="text-white text-[14px] text-center leading-[20.8px] tracking-[-0.16px]" style={mono}>
-        {t.followUpPrompt}
-      </p>
-
-      <div className="w-full h-[54px] flex items-center justify-center px-6">
-        <input
-          type="text"
-          placeholder={t.followUpPlaceholder}
-          className="w-full bg-transparent border-none outline-none text-center text-[14px] text-[#6c7584] placeholder-[#6c7584] caret-[#298dff] tracking-[-0.16px]"
-          style={mono}
-        />
-      </div>
+      {/* ── Follow-up: quick facts ────────────────────────────────────────────── */}
+      <QuickFactsSection transaction={transaction} />
     </div>
   )
 }
