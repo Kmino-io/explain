@@ -2,23 +2,20 @@ import { ParsedTransaction, NetBalanceChange, TransactionCategory } from '../typ
 import { useT, Language } from '../i18n'
 import { TransactionInput } from './TransactionInput'
 
-// ── Figma assets (valid 7 days — replace with permanent hosted assets) ──────
-const imgWallet       = '../../public/imgWallet.svg'
-const imgObjects      = '../../public/imgObjects.svg'
-const imgNFT          = '../../public/imgNFT.svg'
-const imgFailIcon     = '../../public/imgFailIcon.svg'
-const imgArrow        = '../../public/imgArrow.svg'
-// Token transfer
-const imgToken        = '../../public/imgToken.svg'
-const imgTokenArrow   = '../../public/imgTokenArrow.svg'
-const imgCardArrowOut = '../../public/imgCardArrowOut.svg'
-const imgCardArrowIn  = '../../public/imgCardArrowIn.svg'
-// Contract interaction
-const imgContract     = '../../public/imgContract.svg'
-const imgContractArrow = '../../public/imgContractArrow.svg'
-// Footer
-const imgLinkedIn = '../../public/imgLinkedIn.svg'
-const imgTwitterX = '../../public/imgTwitterX.svg'
+// ── Public assets (served from / in both dev and production) ─────────────────
+const imgWallet        = '/imgWallet.svg'
+const imgObjects       = '/imgObjects.svg'
+const imgNFT           = '/imgNFT.svg'
+const imgFailIcon      = '/imgFailIcon.svg'
+const imgArrow         = '/imgArrow.svg'
+const imgToken         = '/imgToken.svg'
+const imgTokenArrow    = '/imgTokenArrow.svg'
+const imgCardArrowOut  = '/imgCardArrowOut.svg'
+const imgCardArrowIn   = '/imgCardArrowIn.svg'
+const imgContract      = '/imgContract.svg'
+const imgContractArrow = '/imgContractArrow.svg'
+const imgLinkedIn      = '/imgLinkedIn.svg'
+const imgTwitterX      = '/imgTwitterX.svg'
 
 const mono = { fontFamily: "'DM Mono', monospace" }
 
@@ -351,10 +348,20 @@ function Footer() {
   return (
     <div className="bg-black px-6 sm:px-12 md:px-[80px] lg:px-[120px] py-6 flex flex-col gap-6 items-start">
       <div className="flex gap-2 items-center">
-        {[imgLinkedIn, imgTwitterX].map((src, i) => (
-          <div key={i} className="bg-[#6c7584] flex items-center justify-center p-[7px] size-[32px] shrink-0">
-            <img alt="" className="block w-full h-full object-contain" src={src} />
-          </div>
+        {([
+          { src: imgLinkedIn, href: 'https://www.linkedin.com/company/kminotech/', label: 'LinkedIn' },
+          { src: imgTwitterX, href: 'https://x.com/DavidPotolski',                label: 'X' },
+        ] as const).map(({ src, href, label }) => (
+          <a
+            key={label}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={label}
+            className="bg-[#6c7584] hover:bg-[#a1a7b2] transition-colors flex items-center justify-center p-[7px] size-[32px] shrink-0"
+          >
+            <img alt={label} className="block w-full h-full object-contain" src={src} />
+          </a>
         ))}
       </div>
       <p className="text-[#6c7584] text-[13px] leading-[16.25px] whitespace-nowrap" style={{ fontFamily: 'Arial, sans-serif' }}>
