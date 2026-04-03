@@ -38,11 +38,16 @@ function DotBackground() {
     let lastSpawn = 0
 
     const resize = () => {
-      canvas.width  = window.innerWidth
-      canvas.height = window.innerHeight
+      const parent = canvas.parentElement
+      canvas.width  = parent ? parent.clientWidth  : window.innerWidth
+      canvas.height = parent ? parent.clientHeight : window.innerHeight
     }
     resize()
     window.addEventListener('resize', resize)
+
+    // Re-measure whenever the container grows (e.g. transaction result loads)
+    const ro = new ResizeObserver(resize)
+    if (canvas.parentElement) ro.observe(canvas.parentElement)
 
     const tick = (ts: number) => {
       const cols = Math.ceil(canvas.width  / GAP) + 1
@@ -90,6 +95,7 @@ function DotBackground() {
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('resize', resize)
+      ro.disconnect()
     }
   }, [])
 
