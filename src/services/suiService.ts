@@ -60,7 +60,6 @@ async function retryWithBackoff<T>(
   let lastError: Error | null = null
   for (let i = 0; i < maxRetries; i++) {
     try {
-      console.log(`Attempt ${i + 1}/${maxRetries}...`)
       return await fn()
     } catch (error) {
       lastError = error as Error

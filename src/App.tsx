@@ -13,8 +13,8 @@ import {
 } from './i18n'
 
 // Figma assets — valid for 7 days; replace with permanent hosted assets
-const imgSuiLogoMask = 'https://www.figma.com/api/mcp/asset/79e64386-46d2-44cd-8d06-77911c820ee0'
-const imgSuiLogo = 'https://www.figma.com/api/mcp/asset/152f6d89-1a01-439d-91cb-61ecbe5a36dc'
+const imgSuiLogoMask = '../public/imgSuiLogoMask.svg'
+const imgSuiLogo = '../public/imgSuiLogo.svg'
 
 // ── Animated dot grid background ─────────────────────────────────────────────
 function DotBackground() {
@@ -278,6 +278,14 @@ function AppInner() {
   const [error, setError] = useState<string | null>(null)
   const [langOpen, setLangOpen] = useState(false)
   const [docsOpen, setDocsOpen] = useState(false)
+
+  // Re-fetch when language changes if a transaction is already shown
+  useEffect(() => {
+    if (currentDigest && !loading) {
+      handleFetchTransaction(currentDigest)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language])
 
   const handleFetchTransaction = async (digest: string) => {
     setLoading(true)
