@@ -32,6 +32,7 @@ export interface NetBalanceChange {
   rawAmount: string        // string to avoid BigInt serialisation issues; may be negative
   formattedAmount: string  // absolute value, human-formatted e.g. "18.852"
   direction: 'in' | 'out'
+  ownerAddress?: string    // address of the wallet this change belongs to
 }
 
 // ── Parsed commands (full PTB step list) ──────────────────────────────────────

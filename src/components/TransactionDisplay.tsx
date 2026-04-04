@@ -5,7 +5,6 @@ import { TransactionInput } from './TransactionInput'
 
 // ── Public assets (served from / in both dev and production) ─────────────────
 const imgWallet        = '/imgWallet.svg'
-const imgObjects       = '/imgObjects.svg'
 const imgNFT           = '/imgNFT.svg'
 const imgFailIcon      = '/imgFailIcon.svg'
 const imgArrow         = '/imgArrow.svg'
@@ -19,6 +18,20 @@ const imgLinkedIn      = '/imgLinkedIn.svg'
 const imgTwitterX      = '/imgTwitterX.svg'
 
 const mono = { fontFamily: "'DM Mono', monospace" }
+
+// ── ObjectHexIcon: single hexagon for object count display ────────────────────
+function ObjectHexIcon() {
+  return (
+    <svg width="18" height="20" viewBox="0 0 18 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M9 1L17 5.5V14.5L9 19L1 14.5V5.5L9 1Z"
+        stroke="#6c7584"
+        strokeWidth="1.2"
+        fill="none"
+      />
+    </svg>
+  )
+}
 
 // ── Known protocol registry ───────────────────────────────────────────────────
 
@@ -39,15 +52,17 @@ type CardContent =
   | { type: 'objects'; count: number }
   | { type: 'nfts'; count: number }
   | { type: 'token'; formattedAmount: string; symbol: string; direction: 'out' | 'in' }
+  | { type: 'coin'; formattedAmount: string; symbol: string; direction: 'out' | 'in' }  // wallet-to-wallet transfer (uses wallet icon)
   | { type: 'wallet-action'; actionLabel: string }   // wallet doing something (arbitrage, swap, etc.)
   | { type: 'protocol'; name: string; outcomeText: string; steps?: number }
   | { type: 'failed' }
   | { type: 'empty' }
 
-// ── ExplanationText: renders {{User A}} markers as blue underlined spans ──────
+// ── ExplanationText: renders {{User A}} and [[OBJ:id:name]] markers ──────────
 
 function ExplanationText({ text, transaction }: { text: string; transaction: ParsedTransaction }) {
-  const parts = text.split(/(\{\{[^}]+\}\})/)
+  // Split on both {{label}} markers and [[OBJ:objectId:displayName]] markers
+  const parts = text.split(/(\{\{[^}]+\}\}|\[\[OBJ:[^\]]+\]\])/)
   return (
     <>
       {parts.map((part, i) => {
@@ -62,6 +77,24 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
             >
               {label}
             </span>
+          )
+        }
+        if (part.startsWith('[[OBJ:') && part.endsWith(']]')) {
+          const inner = part.slice(6, -2)                // "objectId:displayName"
+          const colonIdx = inner.indexOf(':')
+          const objectId = inner.slice(0, colonIdx)
+          const displayName = inner.slice(colonIdx + 1)
+          return (
+            <a
+              key={i}
+              href={`${SUISCAN}/object/${objectId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#298dff] underline decoration-solid font-medium hover:opacity-70 transition-opacity"
+              title={objectId}
+            >
+              {displayName}
+            </a>
           )
         }
         return <span key={i}>{part}</span>
@@ -188,7 +221,7 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
         <div className="relative size-[44px] shrink-0">
           <img alt="" className="absolute inset-0 w-full h-full object-contain" src={imgWallet} />
           {/* Only show the letter for simple wallet cards, not protocol-interaction ones */}
-          {letter && content.type !== 'wallet-action' && (
+          {letter && content.type === 'empty' && (
             <span
               className={`absolute bottom-0 left-[11px] text-[13.8px] font-bold tracking-[-0.69px] leading-none ${labelColor}`}
               style={{ fontFamily: "'TWK Everett', sans-serif" }}
@@ -203,8 +236,10 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
 
       {content.type === 'objects' && (
         <>
-          <div className="h-[32px] w-[111px] relative shrink-0">
-            <img alt="" className="absolute block w-full h-full object-contain" src={imgObjects} />
+          <div className="flex gap-1.5 items-center justify-center flex-wrap">
+            {Array.from({ length: Math.min(content.count, 5) }).map((_, i) => (
+              <ObjectHexIcon key={i} />
+            ))}
           </div>
           <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
             <span className="underline">{t.cardObjectsCreated(content.count)}</span>
@@ -227,7 +262,7 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
         </>
       )}
 
-      {content.type === 'token' && (
+      {(content.type === 'token' || content.type === 'coin') && (
         <span className="text-[10px] text-[#a1a7b2] text-center leading-[1.3]" style={mono}>
           {content.direction === 'out' ? t.cardSends : t.cardReceives}{' '}
           <span className="underline">{content.formattedAmount} {content.symbol}</span>{' '}
@@ -273,14 +308,24 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
 
 // ── OutcomeRow: net balance changes shown below the diagram ───────────────────
 
-function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
+function OutcomeRow({ changes, userAddressMap, gasCostSui }: {
+  changes: NetBalanceChange[]
+  userAddressMap: Map<string, string>
+  gasCostSui: string
+}) {
   const { t } = useT()
   if (changes.length === 0) return null
 
-  // Separate gas (small SUI outflow) from meaningful changes
-  const gasChange = changes.find(
-    c => c.symbol === 'SUI' && c.direction === 'out' && Number(c.rawAmount) / -1e9 < 0.1
-  )
+  // Reverse map: address → label
+  const addrToLabel = new Map<string, string>()
+  for (const [label, addr] of userAddressMap) addrToLabel.set(addr, label)
+
+  // Only treat a SUI outflow as "gas only" when no SUI was transferred to another wallet.
+  // If SUI was received by someone, the sender's SUI outflow = sent amount + gas (both meaningful).
+  const hasSuiInflow = changes.some(c => c.symbol === 'SUI' && c.direction === 'in')
+  const gasChange = !hasSuiInflow
+    ? changes.find(c => c.symbol === 'SUI' && c.direction === 'out' && Number(c.rawAmount) / -1e9 < 0.1)
+    : undefined
   const meaningful = changes.filter(c => c !== gasChange)
 
   return (
@@ -290,22 +335,29 @@ function OutcomeRow({ changes }: { changes: NetBalanceChange[] }) {
           <span className="text-[11px] text-[#6c7584]" style={mono}>{t.netResult}</span>
           {meaningful.map((c, i) => {
             const isGain = c.direction === 'in'
+            const ownerLabel = c.ownerAddress ? addrToLabel.get(c.ownerAddress) : undefined
             return (
-              <div
-                key={i}
-                className={`px-3 py-1 border text-[11px] ${isGain ? 'border-[#298dff] text-[#298dff]' : 'border-[#6c7584] text-[#a1a7b2]'}`}
-                style={mono}
-              >
-                {isGain ? '+' : '-'}{c.formattedAmount} {c.symbol}
+              <div key={i} className="flex flex-col items-center gap-[3px]">
+                {ownerLabel && (
+                  <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.1em]" style={mono}>
+                    {ownerLabel}
+                  </span>
+                )}
+                <div
+                  className={`px-3 py-1 border text-[11px] ${isGain ? 'border-[#298dff] text-[#298dff]' : 'border-[#6c7584] text-[#a1a7b2]'}`}
+                  style={mono}
+                >
+                  {isGain ? '+' : '-'}{c.formattedAmount} {c.symbol}
+                </div>
               </div>
             )
           })}
         </div>
       )}
-      {gasChange && (
+      {gasCostSui && (
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-[#6c7584]" style={mono}>
-            {t.gasFee} {gasChange.formattedAmount} SUI
+            {t.gasFee} {gasCostSui} SUI
           </span>
         </div>
       )}
@@ -591,6 +643,12 @@ type TrustLevel = 'known' | 'unknown' | 'wallet'
 
 type DiagramSpec = {
   senderContent: CardContent
+  // Optional middle node (e.g. minting contract between sender and receiver)
+  middleContent?: CardContent
+  middleLabel?: string
+  middleLink?: string
+  middleRole?: 'protocol' | 'contract'
+  middleTrust?: TrustLevel
   receiverContent: CardContent
   receiverLabel: string
   arrowSrc: string
@@ -696,15 +754,20 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
 
   // ── Coin / token transfer ─────────────────────────────────────────────────
   if (tx.category === 'coin-transfer') {
-    const outChange = tx.netBalanceChanges.find(c => c.direction === 'out')
     const inChange  = tx.netBalanceChanges.find(c => c.direction === 'in')
-    const symbol = outChange?.symbol ?? 'SUI'
-    const amount = outChange?.formattedAmount ?? '?'
+    const suiOut    = tx.netBalanceChanges.find(c => c.direction === 'out' && c.symbol === 'SUI')
+    const nonSuiOut = tx.netBalanceChanges.find(c => c.direction === 'out' && c.symbol !== 'SUI')
+    const isSuiToSui = !!inChange && inChange.symbol === 'SUI' && !!suiOut
+
+    // For SUI→SUI transfers, show the received amount on both cards (avoids showing
+    // the gas-inclusive outflow on the sender card)
+    const senderAmount     = isSuiToSui ? inChange!.formattedAmount : (nonSuiOut ?? suiOut)?.formattedAmount ?? '?'
+    const senderSymbol     = isSuiToSui ? inChange!.symbol          : (nonSuiOut ?? suiOut)?.symbol ?? 'SUI'
     const receiverWalletLabel = otherLabels[0] ?? 'Wallet B'
 
     return {
-      senderContent:   { type: 'token', formattedAmount: amount, symbol, direction: 'out' },
-      receiverContent: { type: 'token', formattedAmount: inChange?.formattedAmount ?? amount, symbol: inChange?.symbol ?? symbol, direction: 'in' },
+      senderContent:   { type: 'coin', formattedAmount: senderAmount, symbol: senderSymbol, direction: 'out' },
+      receiverContent: { type: 'coin', formattedAmount: inChange?.formattedAmount ?? senderAmount, symbol: inChange?.symbol ?? senderSymbol, direction: 'in' },
       receiverLabel: receiverWalletLabel,
       arrowSrc: imgTokenArrow,
       senderLink,
@@ -731,11 +794,23 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
   // ── NFT mint ──────────────────────────────────────────────────────────────
   if (tx.category === 'nft-mint') {
     const nfts = tx.objectsCreated.filter(o => o.isNFT)
+    const mintCall = tx.packageCalls[0]
+    const contractName = mintCall ? humanizeModuleName(mintCall.module) : 'Mint Contract'
+    const contractModule = mintCall?.module ?? ''
     return {
-      senderContent:   { type: 'objects', count: tx.objectsCreated.length },
+      senderContent: { type: 'wallet-action', actionLabel: 'mint NFT' },
+      middleContent: {
+        type: 'protocol',
+        name: contractName,
+        outcomeText: `creates ${nfts.length} NFT${nfts.length !== 1 ? 's' : ''}`,
+      },
+      middleLabel: contractName,
+      middleLink: packageLink(mintCall?.package),
+      middleRole: 'contract',
+      middleTrust: isKnownProtocol(contractModule) ? 'known' : 'unknown',
       receiverContent: { type: 'nfts', count: nfts.length },
       receiverLabel: senderLabel,
-      arrowSrc: imgArrow,
+      arrowSrc: imgContractArrow,
       senderLink,
       receiverRole: 'same',
     }
@@ -927,7 +1002,10 @@ export function TransactionDisplay({
   const senderEntry = wallets.find(([, addr]) => addr === transaction.sender) ?? wallets[0]
   const senderLabel = senderEntry?.[0] ?? 'Wallet A'
 
-  const { senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink, receiverRole, receiverTrust } = buildDiagram(transaction)
+  const {
+    senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink, receiverRole, receiverTrust,
+    middleContent, middleLabel, middleLink, middleRole, middleTrust,
+  } = buildDiagram(transaction)
 
   const steps = transaction.narrative.steps
   const hasSteps = steps && steps.length > 1 && showSteps(transaction.category)
@@ -955,7 +1033,7 @@ export function TransactionDisplay({
       </p>
 
       {/* ── Diagram ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-stretch justify-center py-4 w-full">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center md:items-stretch justify-center py-4 w-full flex-wrap">
         <WalletCard
           label={senderLabel}
           isError={!transaction.success}
@@ -965,7 +1043,7 @@ export function TransactionDisplay({
           t={t}
         />
 
-        {/* Arrow — rotated vertically on mobile, horizontal on desktop */}
+        {/* Arrow (sender → middle or sender → receiver) */}
         <div className={`shrink-0 flex items-center justify-center ${
           transaction.success
             ? 'w-[26px] h-[26px] md:w-[65px] md:h-[26px] md:self-center'
@@ -979,6 +1057,29 @@ export function TransactionDisplay({
             src={transaction.success ? arrowSrc : imgFailIcon}
           />
         </div>
+
+        {/* Optional middle node (e.g. minting contract) */}
+        {middleContent && middleLabel && (
+          <>
+            <WalletCard
+              label={middleLabel}
+              isError={!transaction.success}
+              content={middleContent}
+              linkUrl={middleLink}
+              roleLabel={middleRole === 'contract' ? t.roleContract : t.roleProtocol}
+              trust={middleTrust}
+              t={t}
+            />
+            {/* Arrow (middle → receiver) */}
+            <div className="shrink-0 flex items-center justify-center w-[26px] h-[26px] md:w-[65px] md:h-[26px] md:self-center">
+              <img
+                alt=""
+                className="block w-full h-full object-contain rotate-90 md:rotate-0"
+                src={arrowSrc}
+              />
+            </div>
+          </>
+        )}
 
         <WalletCard
           label={receiverLabel}
@@ -1025,7 +1126,7 @@ export function TransactionDisplay({
 
       {/* ── Outcome row (net balance changes) ────────────────────────────────── */}
       {showOutcomeRow(transaction.category) && transaction.netBalanceChanges.length > 0 && (
-        <OutcomeRow changes={transaction.netBalanceChanges} />
+        <OutcomeRow changes={transaction.netBalanceChanges} userAddressMap={transaction.userAddressMap} gasCostSui={transaction.gasCostSui} />
       )}
 
       {/* ── Step-by-step breakdown ────────────────────────────────────────────── */}

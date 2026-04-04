@@ -302,6 +302,7 @@ function parseTransaction(txBlock: any, language: Language = 'en'): ParsedTransa
     netBalanceChanges,
     sender,
     getUserLabel,
+    userAddressMap,
     objectsTransferred,
     objectsCreated,
     success,
@@ -455,6 +456,7 @@ function buildNetBalanceChanges(rawBalanceChanges: any[]): NetBalanceChange[] {
         rawAmount: bc.amount?.toString() || '0',
         formattedAmount: formatCoinAmount(absRaw.toString(), decimals),
         direction,
+        ownerAddress: bc.owner?.AddressOwner ?? undefined,
       }
     })
     .filter(bc => {
@@ -542,10 +544,10 @@ function computeConfidence(
   commands: ParsedCommand[],
 ): ConfidenceLevel {
   if (category === 'failed') return 'high'
-  const highCategories: TransactionCategory[] = [
-    'arbitrage', 'swap', 'coin-transfer', 'nft-mint', 'nft-transfer',
-    'staking', 'governance', 'bridge',
-  ]
+  // Simple transfer categories are always high-confidence — no events needed
+  const alwaysHighCategories: TransactionCategory[] = ['coin-transfer', 'nft-mint', 'nft-transfer']
+  if (alwaysHighCategories.includes(category)) return 'high'
+  const highCategories: TransactionCategory[] = ['arbitrage', 'swap', 'staking', 'governance', 'bridge']
   if (highCategories.includes(category) && events.length > 0) return 'high'
   const partialCategories: TransactionCategory[] = ['flash-loan', 'liquidity', 'contract-call']
   if (partialCategories.includes(category) && commands.some(c => c.commandType === 'MoveCall')) return 'partial'
@@ -561,6 +563,7 @@ interface NarrativeInput {
   netBalanceChanges: NetBalanceChange[]
   sender: string
   getUserLabel: (addr: string) => string
+  userAddressMap: Map<string, string>
   objectsTransferred: TransferChange[]
   objectsCreated: ObjectChange[]
   success: boolean
@@ -570,7 +573,7 @@ interface NarrativeInput {
 function buildNarrative(input: NarrativeInput): TransactionNarrative {
   const {
     category, events, commands, netBalanceChanges,
-    sender, getUserLabel, objectsTransferred, objectsCreated, success, t,
+    sender, getUserLabel, userAddressMap, objectsTransferred, objectsCreated, success, t,
   } = input
 
   const senderLabel = getUserLabel(sender)
@@ -678,11 +681,24 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
 
   // ── Coin / token transfer ──────────────────────────────────────────────────
   if (category === 'coin-transfer') {
-    const outChange = netBalanceChanges.find(c => c.direction === 'out')
     const coinTransfer = objectsTransferred.find(o => o.objectType?.includes('coin::Coin'))
+    const suiInflow  = netBalanceChanges.find(c => c.direction === 'in'  && c.symbol === 'SUI')
+    const suiOutflow = netBalanceChanges.find(c => c.direction === 'out' && c.symbol === 'SUI')
+
+    // Only treat a SUI outflow as gas when no SUI was actually received by another wallet.
+    // When SUI is being transferred the outflow = (sent amount + gas), so the correct
+    // "sent amount" is the recipient's inflow.
+    const isSuiToSui = !!suiInflow && !!suiOutflow
+    const nonGasOut =
+      netBalanceChanges.find(c => c.direction === 'out' && c.symbol !== 'SUI') ??
+      (isSuiToSui ? null : netBalanceChanges.find(c => c.direction === 'out'))
+    const outChange = nonGasOut ?? netBalanceChanges.find(c => c.direction === 'out')
 
     let amount = ''
-    if (outChange) {
+    if (isSuiToSui && suiInflow) {
+      // Use what the recipient actually received, not sender's gas-inclusive outflow
+      amount = `${suiInflow.formattedAmount} ${suiInflow.symbol}`
+    } else if (outChange) {
       amount = `${outChange.formattedAmount} ${outChange.symbol}`
     } else if (coinTransfer?.tokenSymbol && coinTransfer.amount) {
       amount = `${formatCoinAmount(coinTransfer.amount, coinTransfer.tokenDecimals ?? 9)} ${coinTransfer.tokenSymbol}`
@@ -690,11 +706,21 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
       amount = 'tokens'
     }
 
-    const recipientRaw = coinTransfer
-      ? getFullAddress(
-          (txBlock_findTransferRecipient(coinTransfer.objectId) ?? coinTransfer.to)
-        )
-      : null
+    const recipientRaw = (() => {
+      // 1. Coin object transfer
+      if (coinTransfer) {
+        const addr = getFullAddress(txBlock_findTransferRecipient(coinTransfer.objectId) ?? coinTransfer.to)
+        if (addr && addr !== 'Unknown' && addr !== sender) return addr
+      }
+      // 2. Any object transferred to a non-sender address
+      const anyTransfer = objectsTransferred.find(o => o.to && o.to !== sender)
+      if (anyTransfer) return getFullAddress(anyTransfer.to)
+      // 3. Any address in the userAddressMap that isn't the sender
+      for (const [, addr] of userAddressMap) {
+        if (addr !== sender) return addr
+      }
+      return null
+    })()
     const recipientLabel = recipientRaw ? getUserLabel(recipientRaw) : null
 
     return {
@@ -709,15 +735,23 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     const nfts = objectsCreated.filter(o => o.isNFT)
     const count = nfts.length
     const firstName = nfts[0]?.nftMetadata?.name
+    const objectId = nfts[0]?.objectId
     const collectionName = firstName
       ? (firstName.split('#')[0].trim() || firstName)
       : 'NFT'
 
+    let whatText = count === 1
+      ? t.narrativeNftMint1(senderLabel, collectionName)
+      : t.narrativeNftMintN(senderLabel, count, collectionName)
+
+    // Embed clickable object link: replace the quoted name with [[OBJ:id:name]] marker
+    if (count === 1 && objectId && collectionName) {
+      whatText = whatText.replace(`"${collectionName}"`, `"[[OBJ:${objectId}:${collectionName}]]"`)
+    }
+
     return {
       headline: t.headlineNftMint,
-      what: count === 1
-        ? t.narrativeNftMint1(senderLabel, collectionName)
-        : t.narrativeNftMintN(senderLabel, count, collectionName),
+      what: whatText,
       outcome: t.narrativeNftMintOutcome(count),
     }
   }
