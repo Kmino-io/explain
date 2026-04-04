@@ -831,6 +831,32 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
     if (calls.length > 0) {
       const outcomeText = netBalanceChanges.length > 0 ? outcomeFromChanges() : 'State updated'
 
+      // Helper: pick the most recognizable module across all MoveCall commands.
+      // The first command is often a preamble (e.g. generate_proof_as_owner, SplitCoins),
+      // so we prefer any call whose module matches a known protocol.
+      const bestCall = calls.find(c => isKnownModuleName(c.module ?? '')) ?? calls[0]
+
+      // ── Order cancellation ─────────────────────────────────────────────────
+      // Detect by events — the first command might be an unrelated preamble.
+      const cancelEvents = events.filter(e => {
+        const n = e.eventName.toLowerCase()
+        return n.includes('cancel') && (n.includes('order') || n.includes('trade') || n.includes('fill'))
+      })
+      if (cancelEvents.length > 0) {
+        // Prefer a known-protocol module for the DEX label; fall back to cancel command.
+        const dexModule = bestCall?.module
+          ?? calls.find(c => c.function?.toLowerCase().includes('cancel'))?.module
+          ?? cancelEvents[0]?.module
+          ?? ''
+        const dex = humanizeModuleName(dexModule)
+        const count = cancelEvents.length
+        return {
+          headline: 'Order Cancelled',
+          what: `{{${senderLabel}}} cancelled ${count > 1 ? `${count} orders` : 'an order'} on ${dex}.`,
+          outcome: `${count} order${count > 1 ? 's' : ''} cancelled`,
+        }
+      }
+
       if (calls.length === 1) {
         const call = calls[0]
         const protocol = humanizeModuleName(call.module ?? '')
@@ -843,18 +869,20 @@ function buildNarrative(input: NarrativeInput): TransactionNarrative {
         }
       }
 
-      const protocols = [...new Set(calls.map(c => humanizeModuleName(c.module ?? '')))]
-      const protocolText = protocols.slice(0, 2).join(' and ')
+      // Multi-call: use the most recognizable module for headline/narrative
+      const protocol = humanizeModuleName(bestCall?.module ?? '')
+      const fn = humanizeFunctionName(bestCall?.function ?? '')
+      const typeText = bestCall?.typeSymbols?.length ? ` with ${bestCall.typeSymbols.join(' and ')}` : ''
       return {
-        headline: 'Contract Interaction',
-        what: t.narrativeContractCallN(senderLabel, calls.length, protocolText),
+        headline: protocol,
+        what: t.narrativeContractCall1(senderLabel, fn, typeText, protocol),
         outcome: outcomeText,
-        steps: calls.map(c => {
-          const fn = humanizeFunctionName(c.function ?? '')
-          const mod = humanizeModuleName(c.module ?? '')
+        steps: calls.length > 2 ? calls.map(c => {
+          const stepFn = humanizeFunctionName(c.function ?? '')
+          const stepMod = humanizeModuleName(c.module ?? '')
           const types = c.typeSymbols?.length ? ` (${c.typeSymbols.join(' → ')})` : ''
-          return t.narrativeContractCallStep(fn, types, mod)
-        }),
+          return t.narrativeContractCallStep(stepFn, types, stepMod)
+        }) : undefined,
       }
     }
   }
@@ -921,15 +949,31 @@ function humanizeFunctionName(fnName: string): string {
 function humanizeModuleName(moduleName: string): string {
   const lower = moduleName.toLowerCase()
   const known: [string, string][] = [
+    // ── DEXes ─────────────────────────────────────────────────────────────────
     ['cetus_clmm', 'Cetus DEX'],
     ['cetus', 'Cetus DEX'],
     ['turbos', 'Turbos DEX'],
     ['kriya', 'Kriya DEX'],
     ['deepbook', 'DeepBook DEX'],
+    ['balance_manager', 'DeepBook DEX'],    // DeepBook v3 balance manager
     ['aftermath', 'Aftermath Finance'],
+    ['flowx', 'FlowX DEX'],
+    ['suiswap', 'SuiSwap'],
+    ['bluemove', 'BlueMove'],
+    // ── Lending / money markets ───────────────────────────────────────────────
     ['scallop', 'Scallop Lending'],
     ['navi', 'Navi Protocol'],
+    ['suilend', 'SuiLend'],
     ['bucket', 'Bucket Protocol'],
+    // ── Oracles ───────────────────────────────────────────────────────────────
+    ['price_data_pull', 'Supra Oracle'],
+    ['price_feed_storage', 'Price Oracle'],
+    ['price_feed', 'Price Oracle'],
+    ['oracle', 'Oracle'],
+    ['stork', 'Stork Oracle'],
+    ['pyth', 'Pyth Oracle'],
+    ['switchboard', 'Switchboard Oracle'],
+    // ── Generic DeFi ─────────────────────────────────────────────────────────
     ['flashloan', 'Flash Loan Protocol'],
     ['flash_loan', 'Flash Loan Protocol'],
     ['pool', 'Liquidity Pool'],
@@ -939,23 +983,46 @@ function humanizeModuleName(moduleName: string): string {
     ['dex', 'DEX'],
     ['swap', 'Swap Protocol'],
     ['amm', 'AMM Protocol'],
-    ['market', 'Marketplace'],
-    ['auction', 'Auction Contract'],
-    ['staking', 'Staking Protocol'],
-    ['stake', 'Staking Protocol'],
     ['vault', 'Vault Protocol'],
     ['bridge', 'Bridge Protocol'],
+    // ── Social / Gaming ───────────────────────────────────────────────────────
+    ['task', 'Social App'],
+    ['check_in', 'Social App'],
+    ['game', 'Game Contract'],
+    ['market', 'Marketplace'],
+    ['auction', 'Auction Contract'],
+    // ── Governance / protocol ─────────────────────────────────────────────────
+    ['staking', 'Staking Protocol'],
+    ['stake', 'Staking Protocol'],
     ['governance', 'Governance Contract'],
     ['vote', 'Governance Contract'],
+    // ── Asset types ───────────────────────────────────────────────────────────
     ['nft', 'NFT Contract'],
     ['token', 'Token Contract'],
     ['coin', 'Coin Contract'],
-    ['game', 'Game Contract'],
   ]
   for (const [key, label] of known) {
     if (lower.includes(key)) return label
   }
-  return humanizeFunctionName(moduleName) + ' Contract'
+  // Cap overly long unrecognized module names (e.g. update_temporal_numeric_value_evm_input)
+  const titleCase = humanizeFunctionName(moduleName)
+  const words = titleCase.split(' ')
+  const truncated = words.length > 4 ? words.slice(0, 3).join(' ') + '…' : titleCase
+  return truncated + ' Contract'
+}
+
+/** Returns true if the module name matches a known protocol in the registry */
+function isKnownModuleName(moduleName: string): boolean {
+  const lower = moduleName.toLowerCase()
+  const keys = [
+    'cetus', 'turbos', 'kriya', 'deepbook', 'balance_manager', 'aftermath',
+    'flowx', 'suiswap', 'bluemove', 'scallop', 'navi', 'suilend', 'bucket',
+    'price_data_pull', 'price_feed', 'oracle', 'stork', 'pyth', 'switchboard',
+    'flashloan', 'flash_loan', 'router', 'lending', 'borrow', 'dex', 'swap',
+    'amm', 'vault', 'bridge', 'task', 'game', 'market', 'staking', 'stake',
+    'governance', 'vote', 'nft',
+  ]
+  return keys.some(k => lower.includes(k))
 }
 
 // ── Token info ────────────────────────────────────────────────────────────────

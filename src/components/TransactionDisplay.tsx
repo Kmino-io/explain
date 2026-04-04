@@ -36,10 +36,19 @@ function ObjectHexIcon() {
 // ── Known protocol registry ───────────────────────────────────────────────────
 
 const KNOWN_PROTOCOL_KEYS = [
-  'cetus_clmm', 'cetus', 'turbos', 'kriya', 'deepbook', 'aftermath',
+  // DEXes
+  'cetus_clmm', 'cetus', 'turbos', 'kriya', 'deepbook', 'balance_manager',
+  'aftermath', 'flowx', 'suiswap', 'bluemove',
+  // Lending
+  'scallop', 'navi', 'suilend', 'bucket',
+  // Oracles
+  'price_data_pull', 'price_feed_storage', 'price_feed', 'oracle',
+  'stork', 'pyth', 'switchboard',
+  // Generic DeFi
   'flashloan', 'flash_loan', 'pool', 'router', 'lending', 'borrow',
-  'dex', 'swap', 'amm', 'market', 'staking', 'stake', 'vault',
-  'bridge', 'governance', 'nft',
+  'dex', 'swap', 'amm', 'vault', 'bridge', 'governance', 'stake', 'staking',
+  // Assets
+  'nft', 'token', 'coin',
 ]
 
 function isKnownProtocol(moduleName: string): boolean {
@@ -883,15 +892,32 @@ function showSteps(category: TransactionCategory): boolean {
 function humanizeModuleName(moduleName: string): string {
   const lower = moduleName.toLowerCase()
   const known: [string, string][] = [
+    // DEXes
     ['cetus_clmm', 'Cetus DEX'], ['cetus', 'Cetus DEX'], ['turbos', 'Turbos DEX'],
-    ['kriya', 'Kriya DEX'], ['deepbook', 'DeepBook DEX'], ['aftermath', 'Aftermath Finance'],
+    ['kriya', 'Kriya DEX'], ['deepbook', 'DeepBook DEX'], ['balance_manager', 'DeepBook DEX'],
+    ['aftermath', 'Aftermath Finance'], ['flowx', 'FlowX DEX'], ['suiswap', 'SuiSwap'],
+    ['bluemove', 'BlueMove'],
+    // Lending
+    ['scallop', 'Scallop Lending'], ['navi', 'Navi Protocol'],
+    ['suilend', 'SuiLend'], ['bucket', 'Bucket Protocol'],
+    // Oracles
+    ['price_data_pull', 'Supra Oracle'], ['price_feed_storage', 'Price Oracle'],
+    ['price_feed', 'Price Oracle'], ['oracle', 'Oracle'],
+    ['stork', 'Stork Oracle'], ['pyth', 'Pyth Oracle'], ['switchboard', 'Switchboard Oracle'],
+    // Generic DeFi
     ['flashloan', 'Flash Loan Protocol'], ['flash_loan', 'Flash Loan Protocol'],
     ['pool', 'Liquidity Pool'], ['router', 'DEX Router'],
     ['lending', 'Lending Protocol'], ['borrow', 'Borrowing Protocol'],
     ['dex', 'DEX'], ['swap', 'Swap Protocol'], ['amm', 'AMM Protocol'],
-    ['market', 'Marketplace'], ['staking', 'Staking Protocol'], ['stake', 'Staking Protocol'],
     ['vault', 'Vault Protocol'], ['bridge', 'Bridge Protocol'],
-    ['governance', 'Governance Contract'], ['nft', 'NFT Contract'],
+    // Social / Gaming
+    ['task', 'Social App'], ['game', 'Game Contract'],
+    ['market', 'Marketplace'], ['auction', 'Auction Contract'],
+    // Governance / protocol
+    ['staking', 'Staking Protocol'], ['stake', 'Staking Protocol'],
+    ['governance', 'Governance Contract'], ['vote', 'Governance Contract'],
+    // Assets
+    ['nft', 'NFT Contract'], ['token', 'Token Contract'], ['coin', 'Coin Contract'],
   ]
   for (const [key, label] of known) {
     if (lower.includes(key)) return label
