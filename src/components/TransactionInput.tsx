@@ -9,11 +9,19 @@ interface TransactionInputProps {
 }
 
 const SUPPORTED_EXPLORER_HOSTS = new Set([
+  // Sui explorers
   'suiscan.xyz',
   'www.suiscan.xyz',
   'suivision.xyz',
   'www.suivision.xyz',
   'explorer.sui.io',
+  // Solana explorers
+  'solscan.io',
+  'www.solscan.io',
+  'explorer.solana.com',
+  'www.explorer.solana.com',
+  'solana.fm',
+  'www.solana.fm',
 ])
 
 interface ParseErrors {
@@ -61,6 +69,17 @@ function parseTransactionInput(
     const txBlockIndex = parts.findIndex(part => part === 'txblock')
     const digest = txBlockIndex >= 0 ? parts[txBlockIndex + 1] : undefined
     if (digest) return { digest }
+  }
+
+  // Solana explorers — all use /tx/<signature>
+  if (
+    url.hostname.includes('solscan.io') ||
+    url.hostname.includes('explorer.solana.com') ||
+    url.hostname.includes('solana.fm')
+  ) {
+    const txIndex = parts.findIndex(part => part === 'tx')
+    const sig = txIndex >= 0 ? parts[txIndex + 1] : undefined
+    if (sig) return { digest: sig }
   }
 
   return { error: errors.notTxPage }

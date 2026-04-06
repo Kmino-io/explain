@@ -8,6 +8,10 @@
       "destination": "/api/sui-rpc"
     },
     {
+      "source": "/api/solana-rpc",
+      "destination": "/api/solana-rpc"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

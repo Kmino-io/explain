@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { TransactionInput } from './components/TransactionInput'
 import { TransactionDisplay, TransactionResultFooter } from './components/TransactionDisplay'
-import { fetchTransactionDetails } from './services/suiService'
+import { fetchTransaction } from './services/chainRouter'
 import { ParsedTransaction } from './types/transaction'
 import { ChevronDown } from 'lucide-react'
 import {
@@ -12,13 +12,22 @@ import {
   useT,
 } from './i18n'
 
-// Figma assets — valid for 7 days; replace with permanent hosted assets
-const imgSuiLogoMask = '../public/imgSuiLogoMask.svg'
-const imgSuiLogo = '../public/imgSuiLogo.svg'
+const imgSuiLogoMask = '/imgSuiLogoMask.svg'
+const imgSuiLogo = '/imgSuiLogo.svg'
 
 // ── Animated dot grid background ─────────────────────────────────────────────
-function DotBackground() {
+type LiveDot = { alpha: number; rgb: readonly [number, number, number] }
+
+const SUI_LIVE_COLORS: readonly (readonly [number, number, number])[] = [[41, 141, 255]]
+const SOL_LIVE_COLORS: readonly (readonly [number, number, number])[] = [
+  [153, 69, 255],   // Solana purple
+  [20, 241, 149],   // Solana green
+]
+
+function DotBackground({ chain }: { chain?: 'sui' | 'solana' }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const chainRef  = useRef(chain)
+  useEffect(() => { chainRef.current = chain }, [chain])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -26,13 +35,11 @@ function DotBackground() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const GAP = 22       // px between dot centres
-    const R   = 1.2      // dot radius
-    const GRAY  = 'rgba(108, 117, 132, 0.35)'
-    const BLUE  = [41, 141, 255] as const
+    const GAP  = 22    // px between dot centres
+    const R    = 1.2   // dot radius
+    const GRAY = 'rgba(108, 117, 132, 0.35)'
 
-    // key → current alpha (1 → 0 as it fades)
-    const live = new Map<string, number>()
+    const live = new Map<string, LiveDot>()
 
     let frame: number
     let lastSpawn = 0
@@ -45,7 +52,6 @@ function DotBackground() {
     resize()
     window.addEventListener('resize', resize)
 
-    // Re-measure whenever the container grows (e.g. transaction result loads)
     const ro = new ResizeObserver(resize)
     if (canvas.parentElement) ro.observe(canvas.parentElement)
 
@@ -53,13 +59,14 @@ function DotBackground() {
       const cols = Math.ceil(canvas.width  / GAP) + 1
       const rows = Math.ceil(canvas.height / GAP) + 1
 
-      // Spawn 1-4 new blue dots every ~500 ms (+30% more dots)
       if (ts - lastSpawn > 500) {
+        const palette = chainRef.current === 'solana' ? SOL_LIVE_COLORS : SUI_LIVE_COLORS
         const n = Math.floor(Math.random() * 4) + 2
         for (let i = 0; i < n; i++) {
-          const c = Math.floor(Math.random() * cols)
-          const r = Math.floor(Math.random() * rows)
-          live.set(`${c},${r}`, 1)
+          const c   = Math.floor(Math.random() * cols)
+          const r   = Math.floor(Math.random() * rows)
+          const rgb = palette[Math.floor(Math.random() * palette.length)]
+          live.set(`${c},${r}`, { alpha: 1, rgb })
         }
         lastSpawn = ts
       }
@@ -68,18 +75,18 @@ function DotBackground() {
 
       for (let c = 0; c < cols; c++) {
         for (let r = 0; r < rows; r++) {
-          const x = c * GAP
-          const y = r * GAP
+          const x   = c * GAP
+          const y   = r * GAP
           const key = `${c},${r}`
-          const alpha = live.get(key)
+          const dot = live.get(key)
 
           ctx.beginPath()
           ctx.arc(x, y, R, 0, Math.PI * 2)
 
-          if (alpha !== undefined) {
-            ctx.fillStyle = `rgba(${BLUE[0]},${BLUE[1]},${BLUE[2]},${alpha})`
-            const next = alpha - 0.0015   // ~11 s fade at 60 fps
-            next <= 0 ? live.delete(key) : live.set(key, next)
+          if (dot !== undefined) {
+            ctx.fillStyle = `rgba(${dot.rgb[0]},${dot.rgb[1]},${dot.rgb[2]},${dot.alpha})`
+            const next = dot.alpha - 0.0015   // ~11 s fade at 60 fps
+            next <= 0 ? live.delete(key) : live.set(key, { ...dot, alpha: next })
           } else {
             ctx.fillStyle = GRAY
           }
@@ -295,9 +302,9 @@ function AppInner() {
 
     try {
       if (!digest || digest.length < 32) {
-        throw new Error('Invalid transaction digest format')
+        throw new Error('Invalid transaction hash format')
       }
-      const txData = await fetchTransactionDetails(digest, language)
+      const txData = await fetchTransaction(digest, language)
       setTransaction(txData)
     } catch (err) {
       console.error('Transaction fetch error:', err)
@@ -307,11 +314,13 @@ function AppInner() {
     }
   }
 
+  const isSolana = transaction?.chain === 'solana'
+
   return (
-    <div className="min-h-screen bg-black relative">
+    <div className={`${transaction && !loading ? 'min-h-screen' : 'h-screen overflow-hidden'} bg-black relative`}>
       {/* Animated dot grid background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <DotBackground />
+        <DotBackground chain={isSolana ? 'solana' : 'sui'} />
       </div>
 
       {/* Navbar */}
@@ -333,7 +342,7 @@ function AppInner() {
               onClick={() => { setDocsOpen(o => !o); setLangOpen(false) }}
             >
               <span
-                className={`text-[13px] sm:text-[16px] transition-colors ${docsOpen ? 'text-[#298dff]' : 'text-white'}`}
+                className={`text-[13px] sm:text-[16px] transition-colors ${docsOpen ? (isSolana ? 'text-[#9945ff]' : 'text-[#298dff]') : 'text-white'}`}
                 style={mono}
               >
                 Docs
@@ -359,7 +368,7 @@ function AppInner() {
                   {(Object.keys(LANGUAGE_LABELS) as Language[]).map(lang => (
                     <button
                       key={lang}
-                      className={`w-full text-left px-4 py-2 text-[14px] hover:bg-[#1e2026] transition-colors ${lang === language ? 'text-[#298dff]' : 'text-white'}`}
+                      className={`w-full text-left px-4 py-2 text-[14px] hover:bg-[#1e2026] transition-colors ${lang === language ? (isSolana ? 'text-[#9945ff]' : 'text-[#298dff]') : 'text-white'}`}
                       style={mono}
                       onClick={() => { setLanguage(lang); setLangOpen(false) }}
                     >
@@ -378,7 +387,7 @@ function AppInner() {
       <div className="relative z-10 min-h-[calc(100vh-76px)]">
         {/* Empty state: centered input */}
         {!loading && !error && !transaction && (
-          <div className="flex items-center justify-center min-h-[calc(100vh-76px)]">
+          <div className="flex items-center justify-center h-full pb-[12vh]" style={{ minHeight: 'calc(100vh - 76px)' }}>
             <div className="w-[1000px] max-w-full px-6">
               <TransactionInput
                 onSubmit={handleFetchTransaction}
@@ -418,20 +427,20 @@ function AppInner() {
                 onError={setError}
                 loading={false}
               />
-              <div className="p-6 bg-red-900/50 border-2 border-red-700 rounded-xl backdrop-blur-md w-full">
-                <p className="text-red-200 text-lg text-center">
-                  <strong>Error:</strong> {error}
+              <div className="p-6 bg-[#1a0a0a] border border-[#7f1d1d] w-full">
+                <p className="text-red-200 text-[14px] text-center" style={mono}>
+                  {error}
                 </p>
-                <p className="text-red-300 text-sm text-center mt-3">
+                <p className="text-[#6c7584] text-[12px] text-center mt-3" style={mono}>
                   {t.errorHint}
                 </p>
                 {(error.includes('timeout') || error.includes('slow')) && (
-                  <div className="mt-4 p-3 bg-red-800/30 rounded-lg">
-                    <p className="text-red-200 text-sm font-medium">{t.errorTipsTitle}</p>
-                    <ul className="text-red-300 text-xs mt-2 space-y-1">
-                      <li>• {t.tipWait}</li>
-                      <li>• {t.tipNetwork}</li>
-                      <li>• {t.tipCheck}</li>
+                  <div className="mt-4 p-3 border border-[#7f1d1d]/50 bg-[#7f1d1d]/10">
+                    <p className="text-[#a1a7b2] text-[11px] font-medium" style={mono}>{t.errorTipsTitle}</p>
+                    <ul className="text-[#6c7584] text-[11px] mt-2 space-y-1" style={mono}>
+                      <li>· {t.tipWait}</li>
+                      <li>· {t.tipNetwork}</li>
+                      <li>· {t.tipCheck}</li>
                     </ul>
                   </div>
                 )}

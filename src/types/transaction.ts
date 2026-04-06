@@ -104,11 +104,12 @@ export type ConfidenceLevel = 'high' | 'partial' | 'complex'
 // ── Main type ─────────────────────────────────────────────────────────────────
 export interface ParsedTransaction {
   digest: string
+  chain?: 'sui' | 'solana'   // defaults to 'sui' when absent
   timestamp?: number
   sender: string
   success: boolean
   gasUsed: string
-  gasCostSui: string
+  gasCostSui: string          // native fee amount (SOL for Solana, SUI for Sui)
 
   // Rich data layer
   category: TransactionCategory

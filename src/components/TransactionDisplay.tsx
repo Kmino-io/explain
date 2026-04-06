@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useContext, createContext } from 'react'
 import { ParsedTransaction, NetBalanceChange, TransactionCategory } from '../types/transaction'
 import { useT, Language } from '../i18n'
 import { TransactionInput } from './TransactionInput'
@@ -18,6 +18,42 @@ const imgLinkedIn      = '/imgLinkedIn.svg'
 const imgTwitterX      = '/imgTwitterX.svg'
 
 const mono = { fontFamily: "'DM Mono', monospace" }
+
+// ── Chain theme context ───────────────────────────────────────────────────────
+type ChainTheme = {
+  textAccent: string
+  borderAccent: string
+  bgAccent: string
+  bgAccentHalf: string
+  borderAccentFaint25: string
+  borderAccentFaint30: string
+  bgAccentFaint: string
+  hoverBorderAccentFaint: string
+}
+
+const SUI_THEME: ChainTheme = {
+  textAccent:             'text-[#298dff]',
+  borderAccent:           'border-[#298dff]',
+  bgAccent:               'bg-[#298dff]',
+  bgAccentHalf:           'bg-[rgba(41,141,255,0.5)]',
+  borderAccentFaint25:    'border-[#298dff]/25',
+  borderAccentFaint30:    'border-[#298dff]/30',
+  bgAccentFaint:          'bg-[#298dff]/5',
+  hoverBorderAccentFaint: 'hover:border-[#298dff]/40',
+}
+
+const SOL_THEME: ChainTheme = {
+  textAccent:             'text-[#9945ff]',
+  borderAccent:           'border-[#9945ff]',
+  bgAccent:               'bg-[#9945ff]',
+  bgAccentHalf:           'bg-[rgba(153,69,255,0.5)]',
+  borderAccentFaint25:    'border-[#9945ff]/25',
+  borderAccentFaint30:    'border-[#9945ff]/30',
+  bgAccentFaint:          'bg-[#9945ff]/5',
+  hoverBorderAccentFaint: 'hover:border-[#9945ff]/40',
+}
+
+const ChainThemeCtx = createContext<ChainTheme>(SUI_THEME)
 
 // ── ObjectHexIcon: single hexagon for object count display ────────────────────
 function ObjectHexIcon() {
@@ -70,6 +106,7 @@ type CardContent =
 // ── ExplanationText: renders {{User A}} and [[OBJ:id:name]] markers ──────────
 
 function ExplanationText({ text, transaction }: { text: string; transaction: ParsedTransaction }) {
+  const th = useContext(ChainThemeCtx)
   // Split on both {{label}} markers and [[OBJ:objectId:displayName]] markers
   const parts = text.split(/(\{\{[^}]+\}\}|\[\[OBJ:[^\]]+\]\])/)
   return (
@@ -81,7 +118,7 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
           return (
             <span
               key={i}
-              className="text-[#298dff] underline decoration-solid cursor-pointer font-medium"
+              className={`${th.textAccent} underline decoration-solid cursor-pointer font-medium`}
               title={address}
             >
               {label}
@@ -96,10 +133,10 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
           return (
             <a
               key={i}
-              href={`${SUISCAN}/object/${objectId}`}
+              href={explorerObject(objectId, transaction.chain)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#298dff] underline decoration-solid font-medium hover:opacity-70 transition-opacity"
+              className={`${th.textAccent} underline decoration-solid font-medium hover:opacity-70 transition-opacity`}
               title={objectId}
             >
               {displayName}
@@ -115,14 +152,15 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
 // ── ContractTrustBadge ────────────────────────────────────────────────────────
 
 function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
+  const th = useContext(ChainThemeCtx)
   if (trust === 'wallet') return null
 
   const isKnown = trust === 'known'
   return (
     <div className="relative group cursor-default">
-      <div className={`flex items-center gap-[5px] px-2 py-[3px] border ${isKnown ? 'border-[#298dff]/25' : 'border-[#f5a623]/30'}`}>
-        <div className={`size-[5px] rounded-full shrink-0 ${isKnown ? 'bg-[#298dff]' : 'bg-[#f5a623]'}`} />
-        <span className={`text-[9px] tracking-[0.08em] uppercase ${isKnown ? 'text-[#298dff]' : 'text-[#f5a623]'}`} style={mono}>
+      <div className={`flex items-center gap-[5px] px-2 py-[3px] border ${isKnown ? th.borderAccentFaint25 : 'border-[#f5a623]/30'}`}>
+        <div className={`size-[5px] rounded-full shrink-0 ${isKnown ? th.bgAccent : 'bg-[#f5a623]'}`} />
+        <span className={`text-[9px] tracking-[0.08em] uppercase ${isKnown ? th.textAccent : 'text-[#f5a623]'}`} style={mono}>
           {isKnown ? 'Verified' : 'Unverified'}
         </span>
       </div>
@@ -137,9 +175,9 @@ function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
         <div className={`bg-[#0d0e10] border p-3 flex flex-col gap-1 ${isKnown ? 'border-[#1e2026]' : 'border-[#f5a623]/20]'}`}>
           {isKnown ? (
             <>
-              <span className="text-[10px] text-[#298dff] font-medium" style={mono}>Recognized protocol</span>
+              <span className={`text-[10px] font-medium ${th.textAccent}`} style={mono}>Recognized protocol</span>
               <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>
-                This contract matches a known DeFi protocol on Sui.
+                This contract matches a known DeFi protocol.
               </span>
             </>
           ) : (
@@ -167,8 +205,9 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
   trust?: TrustLevel
   t: ReturnType<typeof useT>['t']
 }) {
-  const borderCls  = isError ? 'border-[#ff2937]' : 'border-[#298dff]'
-  const labelColor = isError ? 'text-[#ff2937]' : 'text-[#298dff]'
+  const th = useContext(ChainThemeCtx)
+  const borderCls  = isError ? 'border-[#ff2937]' : th.borderAccent
+  const labelColor = isError ? 'text-[#ff2937]' : th.textAccent
   const letter     = label.replace('Wallet ', '')
 
   return (
@@ -281,7 +320,7 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
 
       {content.type === 'wallet-action' && (
         <>
-          <div className="bg-[rgba(41,141,255,0.5)] rounded-[48px] px-3 py-1 shrink-0 max-w-full">
+          <div className={`${th.bgAccentHalf} rounded-[48px] px-3 py-1 shrink-0 max-w-full`}>
             <span className="text-[10px] text-white tracking-[-0.16px] leading-[1.3] block truncate max-w-[180px]" style={mono}>
               {content.actionLabel}
             </span>
@@ -317,10 +356,11 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
 
 // ── OutcomeRow: net balance changes shown below the diagram ───────────────────
 
-function OutcomeRow({ changes, userAddressMap, gasCostSui }: {
+function OutcomeRow({ changes, userAddressMap, gasCostSui, chain }: {
   changes: NetBalanceChange[]
   userAddressMap: Map<string, string>
   gasCostSui: string
+  chain?: 'sui' | 'solana'
 }) {
   const { t } = useT()
   if (changes.length === 0) return null
@@ -353,7 +393,7 @@ function OutcomeRow({ changes, userAddressMap, gasCostSui }: {
                   </span>
                 )}
                 <div
-                  className={`px-3 py-1 border text-[11px] ${isGain ? 'border-[#298dff] text-[#298dff]' : 'border-[#6c7584] text-[#a1a7b2]'}`}
+                  className={`px-3 py-1 border text-[11px] ${isGain ? (chain === 'solana' ? 'border-[#9945ff] text-[#9945ff]' : 'border-[#298dff] text-[#298dff]') : 'border-[#6c7584] text-[#a1a7b2]'}`}
                   style={mono}
                 >
                   {isGain ? '+' : '-'}{c.formattedAmount} {c.symbol}
@@ -366,7 +406,7 @@ function OutcomeRow({ changes, userAddressMap, gasCostSui }: {
       {gasCostSui && (
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-[#6c7584]" style={mono}>
-            {t.gasFee} {gasCostSui} SUI
+            {t.gasFee} {gasCostSui} {chain === 'solana' ? 'SOL' : 'SUI'}
           </span>
         </div>
       )}
@@ -384,6 +424,7 @@ function StepsBreakdown({
   transaction: ParsedTransaction
 }) {
   const { t } = useT()
+  const th = useContext(ChainThemeCtx)
   return (
     <div className="w-full border border-[#1e2026] bg-[#0d0e10] p-4 flex flex-col gap-2">
       <span className="text-[11px] text-[#6c7584] uppercase tracking-widest" style={mono}>
@@ -391,7 +432,7 @@ function StepsBreakdown({
       </span>
       {steps.map((step, i) => (
         <div key={i} className="flex gap-3 items-start">
-          <span className="text-[10px] text-[#298dff] shrink-0 mt-[2px]" style={mono}>
+          <span className={`text-[10px] ${th.textAccent} shrink-0 mt-[2px]`} style={mono}>
             {String(i + 1).padStart(2, '0')}
           </span>
           <span className="text-[11px] text-[#a1a7b2] leading-[1.5]" style={mono}>
@@ -413,6 +454,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   const [open, setOpen] = useState<string | null>(null)
   const toggle = (key: string) => setOpen(o => (o === key ? null : key))
   const { t } = useT()
+  const th = useContext(ChainThemeCtx)
 
   const moveCalls = transaction.commands.filter(c => c.commandType === 'MoveCall')
   const addresses = Array.from(transaction.userAddressMap.entries())
@@ -432,7 +474,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
           {moveCalls.map((c, i) => (
             <div key={i} className="flex flex-col gap-[3px]">
               <span className="text-[11px] text-[#a1a7b2]" style={mono}>
-                <span className="text-[#298dff]">{c.module}</span>
+                <span className={th.textAccent}>{c.module}</span>
                 <span className="text-[#6c7584]">::</span>
                 <span className="text-white">{c.function}</span>
                 {c.typeSymbols && c.typeSymbols.length > 0 && (
@@ -442,7 +484,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
               </span>
               {c.package && (
                 <a
-                  href={`${SUISCAN}/object/${c.package}`}
+                  href={explorerObject(c.package, transaction.chain)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[10px] text-[#6c7584] hover:text-[#a1a7b2] transition-colors"
@@ -469,7 +511,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
             <div key={label} className="flex items-center gap-3 flex-wrap">
               <span className="text-[10px] text-[#6c7584] w-[70px] shrink-0" style={mono}>{label}</span>
               <a
-                href={`${SUISCAN}/account/${addr}`}
+                href={explorerAccount(addr, transaction.chain)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors font-mono"
@@ -500,7 +542,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
             return (
               <div key={i} className="flex items-start gap-3 flex-wrap">
                 <a
-                  href={`${SUISCAN}/object/${obj.objectId}`}
+                  href={explorerObject(obj.objectId, transaction.chain)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors shrink-0"
@@ -526,7 +568,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
         <div className="flex flex-col gap-2">
           {events.map((ev, i) => (
             <div key={i} className="flex items-start gap-3 flex-wrap">
-              <span className="text-[11px] text-[#298dff]" style={mono}>{ev.eventName}</span>
+              <span className={`text-[11px] ${th.textAccent}`} style={mono}>{ev.eventName}</span>
               <span className="text-[10px] text-[#6c7584]" style={mono}>{ev.module}</span>
             </div>
           ))}
@@ -543,18 +585,22 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
       <div className="flex flex-col gap-2">
         <div className="flex gap-3 items-center">
           <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Total cost</span>
-          <span className="text-[11px] text-[#a1a7b2]" style={mono}>{transaction.gasCostSui} SUI</span>
+          <span className="text-[11px] text-[#a1a7b2]" style={mono}>
+            {transaction.gasCostSui} {transaction.chain === 'solana' ? 'SOL' : 'SUI'}
+          </span>
         </div>
         {transaction.gasUsed && (
           <div className="flex gap-3 items-center">
-            <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Computation</span>
+            <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>
+              {transaction.chain === 'solana' ? 'Fee (lamports)' : 'Computation'}
+            </span>
             <span className="text-[11px] text-[#a1a7b2]" style={mono}>{transaction.gasUsed}</span>
           </div>
         )}
         <div className="flex gap-3 items-center">
           <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Paid by</span>
           <a
-            href={`${SUISCAN}/account/${transaction.sender}`}
+            href={explorerAccount(transaction.sender, transaction.chain)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-[11px] text-[#a1a7b2] hover:text-white transition-colors"
@@ -564,7 +610,9 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
           </a>
         </div>
         <p className="text-[10px] text-[#6c7584]/60 mt-1 leading-[1.5]" style={mono}>
-          Gas on Sui covers computation and storage. Unused storage deposits are refunded.
+          {transaction.chain === 'solana'
+            ? 'Transaction fee is paid in SOL and burned (no storage refund).'
+            : 'Gas on Sui covers computation and storage. Unused storage deposits are refunded.'}
         </p>
       </div>
     ),
@@ -590,8 +638,8 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
               onClick={() => toggle(topic.key)}
               className={`px-3 py-[5px] text-[10px] border tracking-[-0.08px] transition-colors ${
                 isActive
-                  ? 'border-[#298dff] text-[#298dff] bg-[#298dff]/5'
-                  : 'border-[#1e2026] text-[#6c7584] hover:border-[#298dff]/40 hover:text-[#a1a7b2]'
+                  ? `${th.borderAccent} ${th.textAccent} ${th.bgAccentFaint}`
+                  : `border-[#1e2026] text-[#6c7584] ${th.hoverBorderAccentFaint} hover:text-[#a1a7b2]`
               }`}
               style={mono}
             >
@@ -646,7 +694,21 @@ function Footer() {
 
 // ── Diagram builder ───────────────────────────────────────────────────────────
 
-const SUISCAN = 'https://suiscan.xyz/mainnet'
+function explorerBase(chain?: 'sui' | 'solana') {
+  return chain === 'solana' ? 'https://solscan.io' : 'https://suiscan.xyz/mainnet'
+}
+function explorerAccount(addr: string, chain?: 'sui' | 'solana') {
+  return `${explorerBase(chain)}/account/${addr}`
+}
+function explorerObject(id: string, chain?: 'sui' | 'solana') {
+  // Solscan uses /account/ for programs too; SuiScan has /object/
+  return chain === 'solana'
+    ? `${explorerBase(chain)}/account/${id}`
+    : `${explorerBase(chain)}/object/${id}`
+}
+function explorerTx(digest: string, chain?: 'sui' | 'solana') {
+  return `${explorerBase(chain)}/tx/${digest}`
+}
 
 type TrustLevel = 'known' | 'unknown' | 'wallet'
 
@@ -673,16 +735,16 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
   const senderLabel = senderEntry?.[0] ?? 'Wallet A'
   const otherLabels = wallets.filter(([l]) => l !== senderLabel).map(([l]) => l)
 
-  const senderLink = `${SUISCAN}/account/${tx.sender}`
+  const senderLink = explorerAccount(tx.sender, tx.chain)
 
-  // Helper: link to a package/object on SuiScan
+  // Helper: link to a package/program on the correct explorer
   const packageLink = (pkg?: string) =>
-    pkg ? `${SUISCAN}/object/${pkg}` : undefined
+    pkg ? explorerObject(pkg, tx.chain) : undefined
 
-  // Helper: link to a wallet address on SuiScan
+  // Helper: link to a wallet address on the correct explorer
   const walletLink = (label: string) => {
     const addr = tx.userAddressMap.get(label)
-    return addr ? `${SUISCAN}/account/${addr}` : undefined
+    return addr ? explorerAccount(addr, tx.chain) : undefined
   }
 
   // ── Failed ────────────────────────────────────────────────────────────────
@@ -962,9 +1024,10 @@ const CONFIDENCE_ALL = ['high', 'partial', 'complex'] as const
 
 function ConfidenceBadge({ level }: { level: 'high' | 'partial' | 'complex' }) {
   const { t } = useT()
+  const th = useContext(ChainThemeCtx)
 
   const cfg = {
-    high:    { label: t.confidenceHigh,    desc: t.confidenceHighDesc,    dot: 'bg-[#298dff]',      text: 'text-[#298dff]',      border: 'border-[#298dff]/30',    row: 'text-[#298dff]' },
+    high:    { label: t.confidenceHigh,    desc: t.confidenceHighDesc,    dot: th.bgAccent,          text: th.textAccent,          border: th.borderAccentFaint30,   row: th.textAccent },
     partial: { label: t.confidencePartial, desc: t.confidencePartialDesc, dot: 'bg-[#6c7584]',      text: 'text-[#6c7584]',      border: 'border-[#6c7584]/30',    row: 'text-[#6c7584]' },
     complex: { label: t.confidenceComplex, desc: t.confidenceComplexDesc, dot: 'bg-[#a1a7b2]/50',   text: 'text-[#a1a7b2]',      border: 'border-[#a1a7b2]/20',    row: 'text-[#a1a7b2]/70' },
   }
@@ -1045,7 +1108,10 @@ export function TransactionDisplay({
     return t.roleSender
   }
 
+  const theme = transaction.chain === 'solana' ? SOL_THEME : SUI_THEME
+
   return (
+    <ChainThemeCtx.Provider value={theme}>
     <div className="w-[1000px] max-w-full px-3 sm:px-6 flex flex-col items-center gap-6">
 
       {/* ── Explain another transaction ─────────────────────────────────────── */}
@@ -1118,10 +1184,10 @@ export function TransactionDisplay({
         />
       </div>
 
-      {/* ── Transaction meta row (link + timestamp + confidence) ─────────────── */}
+      {/* ── Transaction meta row (link + chain badge + timestamp + confidence) ── */}
       <div className="flex items-center gap-4 flex-wrap justify-center">
         <a
-          href={`${SUISCAN}/tx/${transaction.digest}`}
+          href={explorerTx(transaction.digest, transaction.chain)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[11px] text-[#6c7584] hover:text-[#a1a7b2] transition-colors tracking-[-0.16px]"
@@ -1129,6 +1195,18 @@ export function TransactionDisplay({
         >
           {t.txLink(shortDigest)}
         </a>
+
+        {/* Chain badge */}
+        <span
+          className={`text-[9px] uppercase tracking-[0.12em] px-1.5 py-0.5 border ${
+            transaction.chain === 'solana'
+              ? 'border-[#9945ff]/50 text-[#9945ff]'
+              : 'border-[#298dff]/50 text-[#298dff]'
+          }`}
+          style={mono}
+        >
+          {transaction.chain === 'solana' ? 'Solana' : 'Sui'}
+        </span>
 
         {timestamp && (
           <>
@@ -1152,7 +1230,12 @@ export function TransactionDisplay({
 
       {/* ── Outcome row (net balance changes) ────────────────────────────────── */}
       {showOutcomeRow(transaction.category) && transaction.netBalanceChanges.length > 0 && (
-        <OutcomeRow changes={transaction.netBalanceChanges} userAddressMap={transaction.userAddressMap} gasCostSui={transaction.gasCostSui} />
+        <OutcomeRow
+          changes={transaction.netBalanceChanges}
+          userAddressMap={transaction.userAddressMap}
+          gasCostSui={transaction.gasCostSui}
+          chain={transaction.chain}
+        />
       )}
 
       {/* ── Step-by-step breakdown ────────────────────────────────────────────── */}
@@ -1163,6 +1246,7 @@ export function TransactionDisplay({
       {/* ── Follow-up: quick facts ────────────────────────────────────────────── */}
       <QuickFactsSection transaction={transaction} />
     </div>
+    </ChainThemeCtx.Provider>
   )
 }
 

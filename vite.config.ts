@@ -10,23 +10,30 @@ export default defineConfig({
         target: 'https://fullnode.mainnet.sui.io:443',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/sui-rpc/, ''),
-        timeout: 30000, // 30 second timeout
-        proxyTimeout: 30000, // 30 second proxy timeout
+        timeout: 30000,
+        proxyTimeout: 30000,
         configure: (proxy, _options) => {
-          proxy.on('error', (err, _req, _res) => {
-            console.log('proxy error', err);
-          });
+          proxy.on('error', (err, _req, _res) => { console.log('sui proxy error', err) })
           proxy.on('proxyReq', (proxyReq, req, _res) => {
-            console.log('Sending Request to the Target:', req.method, req.url);
-            // Set timeout on the request itself
-            proxyReq.setTimeout(30000, () => {
-              console.log('Request timeout');
-              proxyReq.destroy();
-            });
-          });
-          proxy.on('proxyRes', (proxyRes, req, _res) => {
-            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
-          });
+            console.log('Sui RPC →', req.method, req.url)
+            proxyReq.setTimeout(30000, () => { proxyReq.destroy() })
+          })
+        },
+      },
+      '/solana-rpc': {
+        target: 'https://api.mainnet-beta.solana.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/solana-rpc/, ''),
+        timeout: 30000,
+        proxyTimeout: 30000,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => { console.log('solana proxy error', err) })
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // Strip Origin/Referer — the Solana Foundation RPC blocks browser-originated requests
+            proxyReq.removeHeader('origin')
+            proxyReq.removeHeader('referer')
+            proxyReq.setTimeout(30000, () => { proxyReq.destroy() })
+          })
         },
       }
     }
