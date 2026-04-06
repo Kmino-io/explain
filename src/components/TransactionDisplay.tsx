@@ -29,6 +29,7 @@ type ChainTheme = {
   borderAccentFaint30: string
   bgAccentFaint: string
   hoverBorderAccentFaint: string
+  iconFilter: string   // CSS filter to shift blue icons → chain accent color
 }
 
 const SUI_THEME: ChainTheme = {
@@ -40,6 +41,7 @@ const SUI_THEME: ChainTheme = {
   borderAccentFaint30:    'border-[#298dff]/30',
   bgAccentFaint:          'bg-[#298dff]/5',
   hoverBorderAccentFaint: 'hover:border-[#298dff]/40',
+  iconFilter:             '',
 }
 
 const SOL_THEME: ChainTheme = {
@@ -51,6 +53,7 @@ const SOL_THEME: ChainTheme = {
   borderAccentFaint30:    'border-[#9945ff]/30',
   bgAccentFaint:          'bg-[#9945ff]/5',
   hoverBorderAccentFaint: 'hover:border-[#9945ff]/40',
+  iconFilter:             'hue-rotate(54deg)',   // shifts #298dff → ~#9945ff
 }
 
 const ChainThemeCtx = createContext<ChainTheme>(SUI_THEME)
@@ -115,14 +118,18 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
         if (part.startsWith('{{') && part.endsWith('}}')) {
           const label = part.slice(2, -2)
           const address = transaction.userAddressMap.get(label)
-          return (
-            <span
+          return address ? (
+            <a
               key={i}
-              className={`${th.textAccent} underline decoration-solid cursor-pointer font-medium`}
-              title={address}
+              href={explorerAccount(address, transaction.chain)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${th.textAccent} underline decoration-solid font-medium hover:opacity-70 transition-opacity`}
             >
               {label}
-            </span>
+            </a>
+          ) : (
+            <span key={i} className={`${th.textAccent} font-medium`}>{label}</span>
           )
         }
         if (part.startsWith('[[OBJ:') && part.endsWith(']]')) {
@@ -242,7 +249,7 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
       {/* Icon */}
       {content.type === 'token' ? (
         <div className="relative size-[44px] shrink-0">
-          <img alt="" className="block w-full h-full object-contain" src={imgToken} />
+          <img alt="" className="block w-full h-full object-contain" src={imgToken} style={th.iconFilter ? { filter: th.iconFilter } : undefined} />
           <div
             className="absolute flex items-center justify-center"
             style={{
@@ -254,12 +261,13 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
               alt=""
               className="block w-[13.8px] h-[12px] object-contain"
               src={content.direction === 'out' ? imgCardArrowOut : imgCardArrowIn}
+              style={th.iconFilter ? { filter: th.iconFilter } : undefined}
             />
           </div>
         </div>
       ) : content.type === 'protocol' ? (
         <div className="relative size-[44px] shrink-0">
-          <img alt="" className="block w-full h-full object-contain" src={imgContract} />
+          <img alt="" className="block w-full h-full object-contain" src={imgContract} style={th.iconFilter ? { filter: th.iconFilter } : undefined} />
         </div>
       ) : content.type === 'failed' ? (
         <div className="relative size-[44px] shrink-0">
@@ -267,7 +275,7 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
         </div>
       ) : (
         <div className="relative size-[44px] shrink-0">
-          <img alt="" className="absolute inset-0 w-full h-full object-contain" src={imgWallet} />
+          <img alt="" className="absolute inset-0 w-full h-full object-contain" src={imgWallet} style={th.iconFilter ? { filter: th.iconFilter } : undefined} />
           {/* Only show the letter for simple wallet cards, not protocol-interaction ones */}
           {letter && content.type === 'empty' && (
             <span
@@ -369,13 +377,23 @@ function OutcomeRow({ changes, userAddressMap, gasCostSui, chain }: {
   const addrToLabel = new Map<string, string>()
   for (const [label, addr] of userAddressMap) addrToLabel.set(addr, label)
 
-  // Only treat a SUI outflow as "gas only" when no SUI was transferred to another wallet.
-  // If SUI was received by someone, the sender's SUI outflow = sent amount + gas (both meaningful).
-  const hasSuiInflow = changes.some(c => c.symbol === 'SUI' && c.direction === 'in')
-  const gasChange = !hasSuiInflow
-    ? changes.find(c => c.symbol === 'SUI' && c.direction === 'out' && Number(c.rawAmount) / -1e9 < 0.1)
+  // Only treat a SUI/SOL outflow as "gas only" when no native coin was transferred to another wallet.
+  const hasNativeInflow = changes.some(c => (c.symbol === 'SUI' || c.symbol === 'SOL') && c.direction === 'in')
+  const gasChange = !hasNativeInflow
+    ? changes.find(c => (c.symbol === 'SUI' || c.symbol === 'SOL') && c.direction === 'out' && Math.abs(Number(c.rawAmount)) / 1e9 < 0.1)
     : undefined
-  const meaningful = changes.filter(c => c !== gasChange)
+
+  let meaningful = changes.filter(c => c !== gasChange)
+
+  if (chain === 'solana') {
+    meaningful = meaningful.filter(c => {
+      // Only show changes for wallets the user owns (Wallet A, B, etc.)
+      if (c.ownerAddress && !addrToLabel.has(c.ownerAddress)) return false
+      // Skip SPL tokens not in the known registry (symbol ends with '…' = truncated mint address)
+      if (c.symbol !== 'SOL' && c.symbol.endsWith('…')) return false
+      return true
+    })
+  }
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -1147,6 +1165,7 @@ export function TransactionDisplay({
               transaction.success ? 'rotate-90 md:rotate-0' : 'rotate-90'
             }`}
             src={transaction.success ? arrowSrc : imgFailIcon}
+            style={transaction.success && theme.iconFilter ? { filter: theme.iconFilter } : undefined}
           />
         </div>
 
@@ -1168,6 +1187,7 @@ export function TransactionDisplay({
                 alt=""
                 className="block w-full h-full object-contain rotate-90 md:rotate-0"
                 src={arrowSrc}
+                style={theme.iconFilter ? { filter: theme.iconFilter } : undefined}
               />
             </div>
           </>
