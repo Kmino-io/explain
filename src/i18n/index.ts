@@ -102,7 +102,7 @@ export interface Translations {
 }
 
 const en: Translations = {
-  appTitle: 'Suilana Transaction Explainer',
+  appTitle: 'Transaction Explainer',
   loading: (digest) => `I'm fetching data from ${digest}.`,
   loadingWait: 'This may take up to 30 seconds, please wait',
   errorHint: 'Make sure the transaction ID is valid. Supports Sui and Solana mainnet.',

@@ -12,8 +12,6 @@ import {
   useT,
 } from './i18n'
 
-const imgSuiLogoMask = '/imgSuiLogoMask.svg'
-const imgSuiLogo = '/imgSuiLogo.svg'
 
 // ── Animated dot grid background ─────────────────────────────────────────────
 type LiveDot = { alpha: number; rgb: readonly [number, number, number] }
@@ -109,25 +107,23 @@ function DotBackground({ chain }: { chain?: 'sui' | 'solana' }) {
   return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
 }
 
-function SuiLogo() {
+function SuiLogo({ active }: { active?: boolean }) {
   return (
-    <div className="h-[32.557px] overflow-hidden relative w-[63.14px] shrink-0">
-      <div
-        className="absolute inset-0"
-        style={{
-          maskImage: `url('${imgSuiLogoMask}')`,
-          WebkitMaskImage: `url('${imgSuiLogoMask}')`,
-          maskSize: '62.3px 32.557px',
-          WebkitMaskSize: '62.3px 32.557px',
-          maskRepeat: 'no-repeat',
-          WebkitMaskRepeat: 'no-repeat',
-          maskPosition: '0px 0px',
-          WebkitMaskPosition: '0px 0px',
-        }}
-      >
-        <img alt="Sui" className="absolute block w-full h-full object-cover" src={imgSuiLogo} />
-      </div>
-    </div>
+    <img
+      alt="Sui"
+      src={active ? '/Logo_Sui_Droplet_Sui Blue.svg' : '/Logo_Sui_Droplet_White.svg'}
+      style={{ height: '28px', width: 'auto', display: 'block', flexShrink: 0 }}
+    />
+  )
+}
+
+function SolanaLogoMark({ active }: { active?: boolean }) {
+  return (
+    <img
+      src="/solanaLogoMark.svg"
+      alt="Solana"
+      style={{ height: '22px', width: 'auto', filter: active ? undefined : 'brightness(0) invert(1)' }}
+    />
   )
 }
 
@@ -325,10 +321,16 @@ function AppInner() {
 
       {/* Navbar */}
       <div className="relative z-50 p-5">
-        <nav className="backdrop-blur-[6px] bg-[#131518] flex items-center justify-between px-4 sm:px-10 md:px-[60px] lg:px-[100px] py-[11.5px]">
-          <SuiLogo />
+        <nav className="relative backdrop-blur-[6px] bg-[#131518] flex items-center justify-between px-4 sm:px-10 md:px-[60px] lg:px-[100px] py-[11.5px]">
+          {/* Left: Sui logo + Solana mark */}
+          <div className="flex items-center gap-3 shrink-0">
+            <SuiLogo active={!!transaction && !isSolana} />
+            <div className="w-px h-[20px] bg-[#2a2d35]" />
+            <SolanaLogoMark active={isSolana} />
+          </div>
+          {/* Title: truly centred over the full nav width */}
           <span
-            className="hidden sm:block text-white text-[17px] md:text-[20px] font-bold tracking-wide"
+            className="hidden sm:block absolute left-1/2 -translate-x-1/2 text-white text-[17px] md:text-[20px] font-bold tracking-wide pointer-events-none select-none"
             style={{ fontFamily: "'TWK Everett', sans-serif" }}
           >
             {t.appTitle}
