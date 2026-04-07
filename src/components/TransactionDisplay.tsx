@@ -160,6 +160,7 @@ function ExplanationText({ text, transaction }: { text: string; transaction: Par
 
 function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
   const th = useContext(ChainThemeCtx)
+  const { t } = useT()
   if (trust === 'wallet') return null
 
   const isKnown = trust === 'known'
@@ -168,7 +169,7 @@ function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
       <div className={`flex items-center gap-[5px] px-2 py-[3px] border ${isKnown ? th.borderAccentFaint25 : 'border-[#f5a623]/30'}`}>
         <div className={`size-[5px] rounded-full shrink-0 ${isKnown ? th.bgAccent : 'bg-[#f5a623]'}`} />
         <span className={`text-[9px] tracking-[0.08em] uppercase ${isKnown ? th.textAccent : 'text-[#f5a623]'}`} style={mono}>
-          {isKnown ? 'Verified' : 'Unverified'}
+          {isKnown ? t.contractVerifiedLabel : t.contractUnverifiedLabel}
         </span>
       </div>
 
@@ -182,17 +183,13 @@ function ContractTrustBadge({ trust }: { trust: TrustLevel }) {
         <div className={`bg-[#0d0e10] border p-3 flex flex-col gap-1 ${isKnown ? 'border-[#1e2026]' : 'border-[#f5a623]/20]'}`}>
           {isKnown ? (
             <>
-              <span className={`text-[10px] font-medium ${th.textAccent}`} style={mono}>Recognized protocol</span>
-              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>
-                This contract matches a known DeFi protocol.
-              </span>
+              <span className={`text-[10px] font-medium ${th.textAccent}`} style={mono}>{t.contractVerifiedTitle}</span>
+              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>{t.contractVerifiedDesc}</span>
             </>
           ) : (
             <>
-              <span className="text-[10px] text-[#f5a623] font-medium" style={mono}>Unverified contract</span>
-              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>
-                This contract isn't in our list of known protocols. Double-check the address before trusting it.
-              </span>
+              <span className="text-[10px] text-[#f5a623] font-medium" style={mono}>{t.contractUnverifiedTitle}</span>
+              <span className="text-[10px] text-[#6c7584] leading-[1.4]" style={mono}>{t.contractUnverifiedDesc}</span>
             </>
           )}
         </div>
@@ -486,7 +483,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   if (moveCalls.length > 0) {
     topics.push({
       key: 'functions',
-      label: 'Functions called',
+      label: t.tabFunctionsCalled,
       render: () => (
         <div className="flex flex-col gap-3">
           {moveCalls.map((c, i) => (
@@ -522,7 +519,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   if (addresses.length > 0) {
     topics.push({
       key: 'addresses',
-      label: 'Addresses involved',
+      label: t.tabAddressesInvolved,
       render: () => (
         <div className="flex flex-col gap-2">
           {addresses.map(([label, addr]) => (
@@ -551,7 +548,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   if (created.length > 0) {
     topics.push({
       key: 'objects',
-      label: `Objects created (${created.length})`,
+      label: t.tabObjectsCreated(created.length),
       render: () => (
         <div className="flex flex-col gap-2">
           {created.map((obj, i) => {
@@ -581,7 +578,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   if (events.length > 0) {
     topics.push({
       key: 'events',
-      label: `Events emitted (${events.length})`,
+      label: t.tabEventsEmitted(events.length),
       render: () => (
         <div className="flex flex-col gap-2">
           {events.map((ev, i) => (
@@ -598,11 +595,11 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
   // ── Gas details ───────────────────────────────────────────────────────────
   topics.push({
     key: 'gas',
-    label: 'Gas details',
+    label: t.tabGasDetails,
     render: () => (
       <div className="flex flex-col gap-2">
         <div className="flex gap-3 items-center">
-          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Total cost</span>
+          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>{t.gasLabelTotalCost}</span>
           <span className="text-[11px] text-[#a1a7b2]" style={mono}>
             {transaction.gasCostSui} {transaction.chain === 'solana' ? 'SOL' : 'SUI'}
           </span>
@@ -610,13 +607,13 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
         {transaction.gasUsed && (
           <div className="flex gap-3 items-center">
             <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>
-              {transaction.chain === 'solana' ? 'Fee (lamports)' : 'Computation'}
+              {transaction.chain === 'solana' ? t.gasLabelFeeLamports : t.gasLabelComputation}
             </span>
             <span className="text-[11px] text-[#a1a7b2]" style={mono}>{transaction.gasUsed}</span>
           </div>
         )}
         <div className="flex gap-3 items-center">
-          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>Paid by</span>
+          <span className="text-[10px] text-[#6c7584] w-[110px] shrink-0" style={mono}>{t.gasLabelPaidBy}</span>
           <a
             href={explorerAccount(transaction.sender, transaction.chain)}
             target="_blank"
@@ -628,9 +625,7 @@ function QuickFactsSection({ transaction }: { transaction: ParsedTransaction }) 
           </a>
         </div>
         <p className="text-[10px] text-[#6c7584]/60 mt-1 leading-[1.5]" style={mono}>
-          {transaction.chain === 'solana'
-            ? 'Transaction fee is paid in SOL and burned (no storage refund).'
-            : 'Gas on Sui covers computation and storage. Unused storage deposits are refunded.'}
+          {transaction.chain === 'solana' ? t.gasExplainerSolana : t.gasExplainerSui}
         </p>
       </div>
     ),
@@ -1072,7 +1067,7 @@ function ConfidenceBadge({ level }: { level: 'high' | 'partial' | 'complex' }) {
         />
         <div className="bg-[#0d0e10] border border-[#1e2026] p-4 flex flex-col gap-3">
           <span className="text-[10px] text-[#6c7584] uppercase tracking-widest" style={mono}>
-            Interpretation quality
+            {t.confidenceQualityTitle}
           </span>
           {CONFIDENCE_ALL.map(lvl => (
             <div key={lvl} className="flex gap-3 items-start">

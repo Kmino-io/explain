@@ -68,7 +68,15 @@ export interface Translations {
   roleRecipient: string
   roleProtocol: string
   roleContract: string
+  // ── Contract trust badge ────────────────────────────────────────────────────
+  contractVerifiedLabel: string
+  contractVerifiedTitle: string
+  contractVerifiedDesc: string
+  contractUnverifiedLabel: string
+  contractUnverifiedTitle: string
+  contractUnverifiedDesc: string
   // ── Confidence indicator ────────────────────────────────────────────────────
+  confidenceQualityTitle: string
   confidenceHigh: string
   confidenceHighDesc: string
   confidencePartial: string
@@ -99,6 +107,45 @@ export interface Translations {
   headlineObjectCreation: string
   headlineUnknown: string
   headlineFailed: string
+  // ── Steps breakdown tabs ────────────────────────────────────────────────────
+  tabFunctionsCalled: string
+  tabAddressesInvolved: string
+  tabObjectsCreated: (n: number) => string
+  tabEventsEmitted: (n: number) => string
+  tabGasDetails: string
+  gasLabelTotalCost: string
+  gasLabelComputation: string
+  gasLabelFeeLamports: string
+  gasLabelPaidBy: string
+  // ── Gas explainer ───────────────────────────────────────────────────────────
+  gasExplainerSui: string
+  gasExplainerSolana: string
+  // ── Docs panel ──────────────────────────────────────────────────────────────
+  docsTitle: string
+  docsSubtitle: string
+  docsAboutTitle: string
+  docsAboutP1: string
+  docsAboutP2: string
+  docsAboutReadOnly: string
+  docsQualityTitle: string
+  docsQualitySubtitle: string
+  docsHighLabel: string
+  docsHighDesc: string
+  docsPartialLabel: string
+  docsPartialDesc: string
+  docsComplexLabel: string
+  docsComplexDesc: string
+  docsContractTitle: string
+  docsContractSubtitle: string
+  docsVerifiedLabel: string
+  docsVerifiedDesc: string
+  docsUnverifiedLabel: string
+  docsUnverifiedDesc: string
+  docsContractDisclaimer: string
+  docsSolanaTitle: string
+  docsSolanaP1: string
+  docsSolanaP2: string
+  docsFooter: string
 }
 
 const en: Translations = {
@@ -180,13 +227,21 @@ const en: Translations = {
     `{{${s}}} created ${n} new object${n !== 1 ? 's' : ''} on Sui.`,
   narrativeObjectCreationOutcome: (n) => `${n} object${n !== 1 ? 's' : ''} created`,
   narrativeUnknown: (s) =>
-    `{{${s}}} executed a transaction on Sui.`,
+    `{{${s}}} executed a transaction on-chain.`,
   // Role labels
   roleSender: 'Sender',
   roleRecipient: 'Recipient',
   roleProtocol: 'Protocol',
   roleContract: 'Contract',
+  // Contract trust badge
+  contractVerifiedLabel: 'Verified',
+  contractVerifiedTitle: 'Recognized protocol',
+  contractVerifiedDesc: 'This contract matches a known DeFi protocol.',
+  contractUnverifiedLabel: 'Unverified',
+  contractUnverifiedTitle: 'Unverified contract',
+  contractUnverifiedDesc: "This contract isn't in our list of known protocols. Double-check the address before trusting it.",
   // Confidence
+  confidenceQualityTitle: 'Interpretation quality',
   confidenceHigh: 'High confidence',
   confidenceHighDesc: 'All steps identified from on-chain events.',
   confidencePartial: 'Partial interpretation',
@@ -215,8 +270,47 @@ const en: Translations = {
   headlineGovernance: 'Governance Vote',
   headlineBridge: 'Cross-Chain Bridge',
   headlineObjectCreation: 'Object Creation',
-  headlineUnknown: 'Sui Transaction',
+  headlineUnknown: 'Transaction',
   headlineFailed: 'Failed Transaction',
+  // Steps breakdown tabs
+  tabFunctionsCalled: 'Functions called',
+  tabAddressesInvolved: 'Addresses involved',
+  tabObjectsCreated: (n) => `Objects created (${n})`,
+  tabEventsEmitted: (n) => `Events emitted (${n})`,
+  tabGasDetails: 'Gas details',
+  gasLabelTotalCost: 'Total cost',
+  gasLabelComputation: 'Computation',
+  gasLabelFeeLamports: 'Fee (lamports)',
+  gasLabelPaidBy: 'Paid by',
+  // Gas explainer
+  gasExplainerSui: 'Gas on Sui covers computation and storage. Unused storage deposits are refunded.',
+  gasExplainerSolana: 'Transaction fee is paid in SOL and burned. No storage deposit — no refund.',
+  // Docs panel
+  docsTitle: 'Documentation',
+  docsSubtitle: 'How the explainer works',
+  docsAboutTitle: 'About',
+  docsAboutP1: 'Suilana Explainer reads raw on-chain data from Sui and Solana mainnet and translates it into plain language — no blockchain knowledge required.',
+  docsAboutP2: 'Paste any transaction hash or a full explorer URL from SuiScan, SuiVision, Sui Explorer, Solscan, or Solana Explorer. The tool fetches the transaction, classifies what happened, and generates a step-by-step explanation backed entirely by on-chain events.',
+  docsAboutReadOnly: 'No signup. No wallet connection. Read-only.',
+  docsQualityTitle: 'Interpretation quality',
+  docsQualitySubtitle: 'Every result shows how completely the explanation was reconstructed from on-chain events.',
+  docsHighLabel: 'High confidence',
+  docsHighDesc: 'All steps were identified from on-chain events. The explanation is a direct read of what happened.',
+  docsPartialLabel: 'Partial interpretation',
+  docsPartialDesc: 'Most steps are identified. Some details (token amounts, protocol names) may be simplified or inferred.',
+  docsComplexLabel: 'Complex transaction',
+  docsComplexDesc: "The transaction involves patterns the tool couldn't fully decode. The explanation covers what was visible.",
+  docsContractTitle: 'Contract verification',
+  docsContractSubtitle: 'On Sui transactions, the receiver card shows a trust badge when interacting with a smart contract.',
+  docsVerifiedLabel: 'Verified',
+  docsVerifiedDesc: "The contract's module name matches a known Sui DeFi protocol — Cetus, DeepBook, Turbos, Kriya, Aftermath, and others.",
+  docsUnverifiedLabel: 'Unverified',
+  docsUnverifiedDesc: "Not in the known-protocol list. It may be legitimate but isn't recognized. Always verify the package address on SuiScan before trusting it with funds.",
+  docsContractDisclaimer: 'Verification is name-based — not a security audit. A verified badge means the module matches a known name pattern, not that the contract is bug-free or safe.',
+  docsSolanaTitle: 'Solana transactions',
+  docsSolanaP1: 'Solana transactions are identified by a base-58 signature (87–88 characters). Paste it directly or use a Solscan or Solana Explorer URL.',
+  docsSolanaP2: 'Gas on Solana is a fixed fee in SOL that is burned — there is no storage deposit or refund. Net results show only your wallet\'s SOL and SPL token balance changes.',
+  docsFooter: '©2026 Kmino · Data from Sui and Solana mainnet public RPC',
 }
 
 const ptBR: Translations = {
@@ -298,13 +392,21 @@ const ptBR: Translations = {
     `{{${s}}} criou ${n} novo${n !== 1 ? 's' : ''} objeto${n !== 1 ? 's' : ''} na Sui.`,
   narrativeObjectCreationOutcome: (n) => `${n} objeto${n !== 1 ? 's' : ''} criado${n !== 1 ? 's' : ''}`,
   narrativeUnknown: (s) =>
-    `{{${s}}} executou uma transação na Sui.`,
+    `{{${s}}} executou uma transação on-chain.`,
   // Role labels
   roleSender: 'Remetente',
   roleRecipient: 'Destinatário',
   roleProtocol: 'Protocolo',
   roleContract: 'Contrato',
+  // Contract trust badge
+  contractVerifiedLabel: 'Verificado',
+  contractVerifiedTitle: 'Protocolo reconhecido',
+  contractVerifiedDesc: 'Este contrato corresponde a um protocolo DeFi conhecido.',
+  contractUnverifiedLabel: 'Não verificado',
+  contractUnverifiedTitle: 'Contrato não verificado',
+  contractUnverifiedDesc: 'Este contrato não está na nossa lista de protocolos conhecidos. Verifique o endereço antes de confiar nele.',
   // Confidence
+  confidenceQualityTitle: 'Qualidade da interpretação',
   confidenceHigh: 'Alta confiança',
   confidenceHighDesc: 'Todas as etapas identificadas por eventos on-chain.',
   confidencePartial: 'Interpretação parcial',
@@ -333,8 +435,47 @@ const ptBR: Translations = {
   headlineGovernance: 'Votação de Governança',
   headlineBridge: 'Bridge entre Chains',
   headlineObjectCreation: 'Criação de Objeto',
-  headlineUnknown: 'Transação Sui',
+  headlineUnknown: 'Transação',
   headlineFailed: 'Transação Falhou',
+  // Steps breakdown tabs
+  tabFunctionsCalled: 'Funções chamadas',
+  tabAddressesInvolved: 'Endereços envolvidos',
+  tabObjectsCreated: (n) => `Objetos criados (${n})`,
+  tabEventsEmitted: (n) => `Eventos emitidos (${n})`,
+  tabGasDetails: 'Detalhes do gás',
+  gasLabelTotalCost: 'Custo total',
+  gasLabelComputation: 'Computação',
+  gasLabelFeeLamports: 'Taxa (lamports)',
+  gasLabelPaidBy: 'Pago por',
+  // Gas explainer
+  gasExplainerSui: 'O gás na Sui cobre computação e armazenamento. Depósitos de armazenamento não utilizados são reembolsados.',
+  gasExplainerSolana: 'A taxa de transação é paga em SOL e queimada. Sem depósito de armazenamento — sem reembolso.',
+  // Docs panel
+  docsTitle: 'Documentação',
+  docsSubtitle: 'Como o explicador funciona',
+  docsAboutTitle: 'Sobre',
+  docsAboutP1: 'O Suilana Explainer lê dados brutos da blockchain Sui e Solana e os traduz para linguagem simples — sem necessidade de conhecimento em blockchain.',
+  docsAboutP2: 'Cole qualquer hash de transação ou URL completa de SuiScan, SuiVision, Sui Explorer, Solscan ou Solana Explorer. A ferramenta busca a transação, classifica o que aconteceu e gera uma explicação passo a passo baseada inteiramente em eventos on-chain.',
+  docsAboutReadOnly: 'Sem cadastro. Sem conexão de carteira. Somente leitura.',
+  docsQualityTitle: 'Qualidade da interpretação',
+  docsQualitySubtitle: 'Cada resultado mostra o quão completamente a explicação foi reconstruída a partir de eventos on-chain.',
+  docsHighLabel: 'Alta confiança',
+  docsHighDesc: 'Todas as etapas foram identificadas por eventos on-chain. A explicação é uma leitura direta do que aconteceu.',
+  docsPartialLabel: 'Interpretação parcial',
+  docsPartialDesc: 'A maioria das etapas foi identificada. Alguns detalhes (valores, nomes de protocolos) podem estar simplificados ou inferidos.',
+  docsComplexLabel: 'Transação complexa',
+  docsComplexDesc: 'A transação envolve padrões que a ferramenta não conseguiu decodificar completamente. A explicação cobre o que foi visível.',
+  docsContractTitle: 'Verificação de contrato',
+  docsContractSubtitle: 'Em transações Sui, o cartão do destinatário exibe um selo de confiança ao interagir com um contrato inteligente.',
+  docsVerifiedLabel: 'Verificado',
+  docsVerifiedDesc: 'O nome do módulo do contrato corresponde a um protocolo DeFi Sui conhecido — Cetus, DeepBook, Turbos, Kriya, Aftermath, entre outros.',
+  docsUnverifiedLabel: 'Não verificado',
+  docsUnverifiedDesc: 'Não está na lista de protocolos conhecidos. Pode ser legítimo, mas não foi reconhecido. Verifique sempre o endereço do pacote no SuiScan antes de confiar com seus fundos.',
+  docsContractDisclaimer: 'A verificação é baseada no nome — não é uma auditoria de segurança. O selo verificado indica que o módulo corresponde a um padrão conhecido, não que o contrato seja livre de bugs ou seguro.',
+  docsSolanaTitle: 'Transações Solana',
+  docsSolanaP1: 'Transações Solana são identificadas por uma assinatura em base-58 (87–88 caracteres). Cole diretamente ou use uma URL do Solscan ou Solana Explorer.',
+  docsSolanaP2: 'O gás na Solana é uma taxa fixa em SOL que é queimada — não há depósito de armazenamento ou reembolso. Os resultados líquidos mostram apenas as mudanças de saldo em SOL e tokens SPL da sua carteira.',
+  docsFooter: '©2026 Kmino · Dados de RPC público da Sui e Solana mainnet',
 }
 
 const es: Translations = {
@@ -416,13 +557,21 @@ const es: Translations = {
     `{{${s}}} creó ${n} nuevo${n !== 1 ? 's' : ''} objeto${n !== 1 ? 's' : ''} en Sui.`,
   narrativeObjectCreationOutcome: (n) => `${n} objeto${n !== 1 ? 's' : ''} creado${n !== 1 ? 's' : ''}`,
   narrativeUnknown: (s) =>
-    `{{${s}}} ejecutó una transacción en Sui.`,
+    `{{${s}}} ejecutó una transacción on-chain.`,
   // Role labels
   roleSender: 'Remitente',
   roleRecipient: 'Destinatario',
   roleProtocol: 'Protocolo',
   roleContract: 'Contrato',
+  // Contract trust badge
+  contractVerifiedLabel: 'Verificado',
+  contractVerifiedTitle: 'Protocolo reconocido',
+  contractVerifiedDesc: 'Este contrato coincide con un protocolo DeFi conocido.',
+  contractUnverifiedLabel: 'No verificado',
+  contractUnverifiedTitle: 'Contrato no verificado',
+  contractUnverifiedDesc: 'Este contrato no está en nuestra lista de protocolos conocidos. Verifica la dirección antes de confiar en él.',
   // Confidence
+  confidenceQualityTitle: 'Calidad de interpretación',
   confidenceHigh: 'Alta confianza',
   confidenceHighDesc: 'Todos los pasos identificados desde eventos on-chain.',
   confidencePartial: 'Interpretación parcial',
@@ -451,8 +600,47 @@ const es: Translations = {
   headlineGovernance: 'Votación de Gobernanza',
   headlineBridge: 'Puente entre Cadenas',
   headlineObjectCreation: 'Creación de Objeto',
-  headlineUnknown: 'Transacción Sui',
+  headlineUnknown: 'Transacción',
   headlineFailed: 'Transacción Fallida',
+  // Steps breakdown tabs
+  tabFunctionsCalled: 'Funciones llamadas',
+  tabAddressesInvolved: 'Direcciones involucradas',
+  tabObjectsCreated: (n) => `Objetos creados (${n})`,
+  tabEventsEmitted: (n) => `Eventos emitidos (${n})`,
+  tabGasDetails: 'Detalles del gas',
+  gasLabelTotalCost: 'Costo total',
+  gasLabelComputation: 'Cómputo',
+  gasLabelFeeLamports: 'Comisión (lamports)',
+  gasLabelPaidBy: 'Pagado por',
+  // Gas explainer
+  gasExplainerSui: 'El gas en Sui cubre cómputo y almacenamiento. Los depósitos de almacenamiento no utilizados son reembolsados.',
+  gasExplainerSolana: 'La comisión de transacción se paga en SOL y se quema. Sin depósito de almacenamiento — sin reembolso.',
+  // Docs panel
+  docsTitle: 'Documentación',
+  docsSubtitle: 'Cómo funciona el explicador',
+  docsAboutTitle: 'Acerca de',
+  docsAboutP1: 'Suilana Explainer lee datos brutos de la blockchain de Sui y Solana y los traduce a lenguaje sencillo — sin necesidad de conocimientos en blockchain.',
+  docsAboutP2: 'Pega cualquier hash de transacción o URL completa de SuiScan, SuiVision, Sui Explorer, Solscan o Solana Explorer. La herramienta obtiene la transacción, clasifica lo que ocurrió y genera una explicación paso a paso respaldada por eventos on-chain.',
+  docsAboutReadOnly: 'Sin registro. Sin conexión de billetera. Solo lectura.',
+  docsQualityTitle: 'Calidad de interpretación',
+  docsQualitySubtitle: 'Cada resultado muestra qué tan completamente se reconstruyó la explicación a partir de eventos on-chain.',
+  docsHighLabel: 'Alta confianza',
+  docsHighDesc: 'Todos los pasos fueron identificados desde eventos on-chain. La explicación es una lectura directa de lo que ocurrió.',
+  docsPartialLabel: 'Interpretación parcial',
+  docsPartialDesc: 'La mayoría de los pasos fueron identificados. Algunos detalles (montos, nombres de protocolos) pueden estar simplificados o inferidos.',
+  docsComplexLabel: 'Transacción compleja',
+  docsComplexDesc: 'La transacción involucra patrones que la herramienta no pudo decodificar completamente. La explicación cubre lo que fue visible.',
+  docsContractTitle: 'Verificación de contrato',
+  docsContractSubtitle: 'En transacciones Sui, la tarjeta del destinatario muestra una insignia de confianza al interactuar con un contrato inteligente.',
+  docsVerifiedLabel: 'Verificado',
+  docsVerifiedDesc: 'El nombre del módulo del contrato coincide con un protocolo DeFi de Sui conocido — Cetus, DeepBook, Turbos, Kriya, Aftermath, entre otros.',
+  docsUnverifiedLabel: 'No verificado',
+  docsUnverifiedDesc: 'No está en la lista de protocolos conocidos. Puede ser legítimo pero no está reconocido. Verifica siempre la dirección del paquete en SuiScan antes de confiar en él con fondos.',
+  docsContractDisclaimer: 'La verificación es por nombre — no es una auditoría de seguridad. La insignia verificada indica que el módulo coincide con un patrón conocido, no que el contrato esté libre de errores o sea seguro.',
+  docsSolanaTitle: 'Transacciones de Solana',
+  docsSolanaP1: 'Las transacciones de Solana se identifican por una firma en base-58 (87–88 caracteres). Pégala directamente o usa una URL de Solscan o Solana Explorer.',
+  docsSolanaP2: 'El gas en Solana es una comisión fija en SOL que se quema — no hay depósito de almacenamiento ni reembolso. Los resultados netos muestran solo los cambios de saldo en SOL y tokens SPL de tu billetera.',
+  docsFooter: '©2026 Kmino · Datos de RPC público de Sui y Solana mainnet',
 }
 
 export const allTranslations: Record<Language, Translations> = { en, 'pt-BR': ptBR, es }

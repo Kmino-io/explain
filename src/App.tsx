@@ -132,6 +132,8 @@ function SolanaLogoMark({ active }: { active?: boolean }) {
 const mono = { fontFamily: "'DM Mono', monospace" }
 
 function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useT()
+
   // Close on Escape key
   useEffect(() => {
     if (!open) return
@@ -156,10 +158,10 @@ function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }
         <div className="flex items-start justify-between px-6 py-5 border-b border-[#1e2026] shrink-0">
           <div className="flex flex-col gap-[3px]">
             <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.15em]" style={mono}>
-              Documentation
+              {t.docsTitle}
             </span>
             <span className="text-[14px] text-white" style={mono}>
-              How the explainer works
+              {t.docsSubtitle}
             </span>
           </div>
           <button
@@ -176,44 +178,31 @@ function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }
 
           {/* About */}
           <div className="px-6 py-6 flex flex-col gap-3">
-            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>About</span>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>
-              Transaction Explainer reads raw on-chain data from Sui mainnet and translates it into plain language — no blockchain knowledge required.
-            </p>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>
-              Paste any transaction digest or a full explorer URL from SuiScan, SuiVision, or Sui Explorer. The tool fetches the transaction, classifies what happened, and generates a step-by-step explanation backed entirely by on-chain events.
-            </p>
-            <p className="text-[12px] text-[#6c7584] leading-[1.7]" style={mono}>
-              No signup. No wallet connection. Read-only.
-            </p>
+            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsAboutTitle}</span>
+            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsAboutP1}</p>
+            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsAboutP2}</p>
+            <p className="text-[12px] text-[#6c7584] leading-[1.7]" style={mono}>{t.docsAboutReadOnly}</p>
+          </div>
+
+          {/* Solana transactions */}
+          <div className="px-6 py-6 flex flex-col gap-3">
+            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsSolanaTitle}</span>
+            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsSolanaP1}</p>
+            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsSolanaP2}</p>
           </div>
 
           {/* Interpretation quality */}
           <div className="px-6 py-6 flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>Interpretation quality</span>
-              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>
-                Every result shows how completely the explanation was reconstructed from on-chain events.
-              </span>
+              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsQualityTitle}</span>
+              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>{t.docsQualitySubtitle}</span>
             </div>
             <div className="flex flex-col gap-4">
               {([
-                {
-                  dot: 'bg-[#298dff]',
-                  label: 'High confidence',
-                  desc: 'All steps were identified from on-chain events. The explanation is a direct read of what happened.',
-                },
-                {
-                  dot: 'bg-[#6c7584]',
-                  label: 'Partial interpretation',
-                  desc: 'Most steps are identified. Some details (token amounts, protocol names) may be simplified or inferred.',
-                },
-                {
-                  dot: 'bg-[#a1a7b2]/50',
-                  label: 'Complex transaction',
-                  desc: "The transaction involves patterns the tool couldn't fully decode. The explanation covers what was visible.",
-                },
-              ] as const).map(({ dot, label, desc }) => (
+                { dot: 'bg-[#298dff]',    label: t.docsHighLabel,    desc: t.docsHighDesc },
+                { dot: 'bg-[#6c7584]',    label: t.docsPartialLabel, desc: t.docsPartialDesc },
+                { dot: 'bg-[#a1a7b2]/50', label: t.docsComplexLabel, desc: t.docsComplexDesc },
+              ]).map(({ dot, label, desc }) => (
                 <div key={label} className="flex gap-3 items-start">
                   <div className={`mt-[5px] size-[5px] rounded-full shrink-0 ${dot}`} />
                   <div className="flex flex-col gap-[4px]">
@@ -228,24 +217,14 @@ function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }
           {/* Contract verification */}
           <div className="px-6 py-6 flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>Contract verification</span>
-              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>
-                When a transaction interacts with a smart contract, the receiver card shows a trust badge.
-              </span>
+              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsContractTitle}</span>
+              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>{t.docsContractSubtitle}</span>
             </div>
             <div className="flex flex-col gap-4">
               {([
-                {
-                  dot: 'bg-[#298dff]',
-                  label: 'Verified',
-                  desc: "The contract's module name matches a known Sui DeFi protocol — Cetus, DeepBook, Turbos, Kriya, Aftermath, and others.",
-                },
-                {
-                  dot: 'bg-[#f5a623]',
-                  label: 'Unverified',
-                  desc: "Not in the known-protocol list. It may be legitimate but isn't recognized. Always verify the package address on SuiScan before trusting it with funds.",
-                },
-              ] as const).map(({ dot, label, desc }) => (
+                { dot: 'bg-[#298dff]', label: t.docsVerifiedLabel,   desc: t.docsVerifiedDesc },
+                { dot: 'bg-[#f5a623]', label: t.docsUnverifiedLabel, desc: t.docsUnverifiedDesc },
+              ]).map(({ dot, label, desc }) => (
                 <div key={label} className="flex gap-3 items-start">
                   <div className={`mt-[5px] size-[5px] rounded-full shrink-0 ${dot}`} />
                   <div className="flex flex-col gap-[4px]">
@@ -256,7 +235,7 @@ function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }
               ))}
             </div>
             <p className="text-[11px] text-[#6c7584]/60 leading-[1.5] border-t border-[#1e2026] pt-4" style={mono}>
-              Verification is name-based — not a security audit. A verified badge means the module matches a known name pattern, not that the contract is bug-free or safe.
+              {t.docsContractDisclaimer}
             </p>
           </div>
 
@@ -264,9 +243,7 @@ function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }
 
         {/* Panel footer */}
         <div className="shrink-0 px-6 py-4 border-t border-[#1e2026]">
-          <p className="text-[10px] text-[#6c7584]/50" style={mono}>
-            ©2026 Kmino · Data from Sui mainnet public RPC
-          </p>
+          <p className="text-[10px] text-[#6c7584]/50" style={mono}>{t.docsFooter}</p>
         </div>
       </div>
     </>
