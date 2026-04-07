@@ -11,6 +11,7 @@ import {
   allTranslations,
   useT,
 } from './i18n'
+import { DocsPage } from './pages/DocsPage'
 
 
 // ── Animated dot grid background ─────────────────────────────────────────────
@@ -127,128 +128,7 @@ function SolanaLogoMark({ active }: { active?: boolean }) {
   )
 }
 
-// ── DocsSidePanel ─────────────────────────────────────────────────────────────
-
 const mono = { fontFamily: "'DM Mono', monospace" }
-
-function DocsSidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useT()
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [open, onClose])
-
-  return (
-    <>
-      {/* Backdrop */}
-      <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div
-        className={`fixed right-0 top-0 h-full w-[400px] max-w-[100vw] z-50 bg-[#0d0e10] border-l border-[#1e2026] flex flex-col transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        {/* Panel header */}
-        <div className="flex items-start justify-between px-6 py-5 border-b border-[#1e2026] shrink-0">
-          <div className="flex flex-col gap-[3px]">
-            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.15em]" style={mono}>
-              {t.docsTitle}
-            </span>
-            <span className="text-[14px] text-white" style={mono}>
-              {t.docsSubtitle}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-[#6c7584] hover:text-white transition-colors text-[18px] leading-none mt-[2px]"
-            aria-label="Close docs"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[#1e2026]">
-
-          {/* About */}
-          <div className="px-6 py-6 flex flex-col gap-3">
-            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsAboutTitle}</span>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsAboutP1}</p>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsAboutP2}</p>
-            <p className="text-[12px] text-[#6c7584] leading-[1.7]" style={mono}>{t.docsAboutReadOnly}</p>
-          </div>
-
-          {/* Solana transactions */}
-          <div className="px-6 py-6 flex flex-col gap-3">
-            <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsSolanaTitle}</span>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsSolanaP1}</p>
-            <p className="text-[12px] text-[#a1a7b2] leading-[1.7]" style={mono}>{t.docsSolanaP2}</p>
-          </div>
-
-          {/* Interpretation quality */}
-          <div className="px-6 py-6 flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsQualityTitle}</span>
-              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>{t.docsQualitySubtitle}</span>
-            </div>
-            <div className="flex flex-col gap-4">
-              {([
-                { dot: 'bg-[#298dff]',    label: t.docsHighLabel,    desc: t.docsHighDesc },
-                { dot: 'bg-[#6c7584]',    label: t.docsPartialLabel, desc: t.docsPartialDesc },
-                { dot: 'bg-[#a1a7b2]/50', label: t.docsComplexLabel, desc: t.docsComplexDesc },
-              ]).map(({ dot, label, desc }) => (
-                <div key={label} className="flex gap-3 items-start">
-                  <div className={`mt-[5px] size-[5px] rounded-full shrink-0 ${dot}`} />
-                  <div className="flex flex-col gap-[4px]">
-                    <span className="text-[12px] text-[#a1a7b2] font-medium leading-none" style={mono}>{label}</span>
-                    <span className="text-[11px] text-[#6c7584] leading-[1.5]" style={mono}>{desc}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Contract verification */}
-          <div className="px-6 py-6 flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] text-[#6c7584] uppercase tracking-[0.12em]" style={mono}>{t.docsContractTitle}</span>
-              <span className="text-[12px] text-[#a1a7b2] leading-[1.6]" style={mono}>{t.docsContractSubtitle}</span>
-            </div>
-            <div className="flex flex-col gap-4">
-              {([
-                { dot: 'bg-[#298dff]', label: t.docsVerifiedLabel,   desc: t.docsVerifiedDesc },
-                { dot: 'bg-[#f5a623]', label: t.docsUnverifiedLabel, desc: t.docsUnverifiedDesc },
-              ]).map(({ dot, label, desc }) => (
-                <div key={label} className="flex gap-3 items-start">
-                  <div className={`mt-[5px] size-[5px] rounded-full shrink-0 ${dot}`} />
-                  <div className="flex flex-col gap-[4px]">
-                    <span className="text-[12px] text-[#a1a7b2] font-medium leading-none" style={mono}>{label}</span>
-                    <span className="text-[11px] text-[#6c7584] leading-[1.5]" style={mono}>{desc}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-[#6c7584]/60 leading-[1.5] border-t border-[#1e2026] pt-4" style={mono}>
-              {t.docsContractDisclaimer}
-            </p>
-          </div>
-
-        </div>
-
-        {/* Panel footer */}
-        <div className="shrink-0 px-6 py-4 border-t border-[#1e2026]">
-          <p className="text-[10px] text-[#6c7584]/50" style={mono}>{t.docsFooter}</p>
-        </div>
-      </div>
-    </>
-  )
-}
 
 function AppInner() {
   const { t, language, setLanguage } = useT()
@@ -257,7 +137,7 @@ function AppInner() {
   const [currentDigest, setCurrentDigest] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [langOpen, setLangOpen] = useState(false)
-  const [docsOpen, setDocsOpen] = useState(false)
+  const [page, setPage] = useState<'home' | 'docs'>('home')
 
   // Re-fetch when language changes if a transaction is already shown
   useEffect(() => {
@@ -289,6 +169,8 @@ function AppInner() {
 
   const isSolana = transaction?.chain === 'solana'
 
+  if (page === 'docs') return <DocsPage onBack={() => setPage('home')} />
+
   return (
     <div className={`${transaction && !loading ? 'min-h-screen' : 'h-screen overflow-hidden'} bg-black relative`}>
       {/* Animated dot grid background */}
@@ -318,12 +200,9 @@ function AppInner() {
             {/* Docs */}
             <button
               className="flex items-center gap-1 cursor-pointer"
-              onClick={() => { setDocsOpen(o => !o); setLangOpen(false) }}
+              onClick={() => { setPage('docs'); setLangOpen(false) }}
             >
-              <span
-                className={`text-[13px] sm:text-[16px] transition-colors ${docsOpen ? (isSolana ? 'text-[#9945ff]' : 'text-[#298dff]') : 'text-white'}`}
-                style={mono}
-              >
+              <span className="text-[13px] sm:text-[16px] text-white hover:text-[#a1a7b2] transition-colors" style={mono}>
                 Docs
               </span>
             </button>
@@ -332,7 +211,7 @@ function AppInner() {
             <div className="relative">
               <button
                 className="flex items-center gap-1 sm:gap-2 cursor-pointer"
-                onClick={() => { setLangOpen(o => !o); setDocsOpen(false) }}
+                onClick={() => setLangOpen(o => !o)}
               >
                 <span
                   className="text-white text-[13px] sm:text-[16px]"
@@ -443,8 +322,6 @@ function AppInner() {
       {/* Footer — shown only after a result */}
       {transaction && !loading && <TransactionResultFooter />}
 
-      {/* Docs side panel */}
-      <DocsSidePanel open={docsOpen} onClose={() => setDocsOpen(false)} />
     </div>
   )
 }

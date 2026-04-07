@@ -146,6 +146,31 @@ export interface Translations {
   docsSolanaP1: string
   docsSolanaP2: string
   docsFooter: string
+  docsBack: string
+  // ── Trusted protocols section ────────────────────────────────────────────────
+  docsTrustedTitle: string
+  docsTrustedSubtitle: string
+  docsTrustedNote: string
+  // ── Chain concepts section ───────────────────────────────────────────────────
+  docsConceptsTitle: string
+  cSuiPackageTerm: string
+  cSuiPackageDesc: string
+  cSuiDigestTerm: string
+  cSuiDigestDesc: string
+  cSuiObjectTerm: string
+  cSuiObjectDesc: string
+  cSuiGasTerm: string
+  cSuiGasDesc: string
+  cSolProgramTerm: string
+  cSolProgramDesc: string
+  cSolSignatureTerm: string
+  cSolSignatureDesc: string
+  cSolAccountTerm: string
+  cSolAccountDesc: string
+  cSolLamportTerm: string
+  cSolLamportDesc: string
+  cSolInstructionTerm: string
+  cSolInstructionDesc: string
 }
 
 const en: Translations = {
@@ -311,6 +336,29 @@ const en: Translations = {
   docsSolanaP1: 'Solana transactions are identified by a base-58 signature (87–88 characters). Paste it directly or use a Solscan or Solana Explorer URL.',
   docsSolanaP2: 'Gas on Solana is a fixed fee in SOL that is burned — there is no storage deposit or refund. Net results show only your wallet\'s SOL and SPL token balance changes.',
   docsFooter: '©2026 Kmino · Data from Sui and Solana mainnet public RPC',
+  docsBack: 'Back',
+  docsTrustedTitle: 'Trusted protocols',
+  docsTrustedSubtitle: 'These protocols are recognized by name and shown as Verified in the app. Verification is name-based — not a security audit.',
+  docsTrustedNote: 'All other contracts show as Unverified. This does not mean they are unsafe — always verify the package or program address yourself before interacting.',
+  docsConceptsTitle: 'Chain concepts',
+  cSuiPackageTerm: 'Package',
+  cSuiPackageDesc: 'A deployed smart contract on Sui. Packages contain modules (libraries of functions). When the app shows a contract call, it shows the package address and module name.',
+  cSuiDigestTerm: 'Transaction Digest',
+  cSuiDigestDesc: 'A unique identifier for a Sui transaction — a 44-character base-58 string. This is what you paste to look up a transaction.',
+  cSuiObjectTerm: 'Object',
+  cSuiObjectDesc: "Sui's primary data primitive. Everything on Sui — tokens, NFTs, liquidity positions, receipts — is an object with a unique ID and an owner.",
+  cSuiGasTerm: 'Gas & Storage',
+  cSuiGasDesc: 'Sui charges gas for computation and a refundable storage deposit for new objects. When objects are deleted, the deposit is returned to the sender.',
+  cSolProgramTerm: 'Program',
+  cSolProgramDesc: "Solana's term for a smart contract. Programs are stateless and identified by their address (e.g. Jupiter: JUP6Lb…). Equivalent to a Sui package.",
+  cSolSignatureTerm: 'Signature',
+  cSolSignatureDesc: 'The transaction identifier on Solana — an 87–88 character base-58 string. Equivalent to a Sui digest. This is what you paste to look up a transaction.',
+  cSolAccountTerm: 'Account',
+  cSolAccountDesc: 'Solana stores all state in accounts. Every wallet, token balance, and program data lives in an account. Token accounts are separate from wallet accounts.',
+  cSolLamportTerm: 'Lamport',
+  cSolLamportDesc: 'The smallest unit of SOL (1 SOL = 1,000,000,000 lamports). Transaction fees are paid in lamports and permanently burned — no refund.',
+  cSolInstructionTerm: 'Instruction',
+  cSolInstructionDesc: 'A single operation within a Solana transaction. One transaction can contain multiple instructions calling different programs in sequence.',
 }
 
 const ptBR: Translations = {
@@ -476,6 +524,29 @@ const ptBR: Translations = {
   docsSolanaP1: 'Transações Solana são identificadas por uma assinatura em base-58 (87–88 caracteres). Cole diretamente ou use uma URL do Solscan ou Solana Explorer.',
   docsSolanaP2: 'O gás na Solana é uma taxa fixa em SOL que é queimada — não há depósito de armazenamento ou reembolso. Os resultados líquidos mostram apenas as mudanças de saldo em SOL e tokens SPL da sua carteira.',
   docsFooter: '©2026 Kmino · Dados de RPC público da Sui e Solana mainnet',
+  docsBack: 'Voltar',
+  docsTrustedTitle: 'Protocolos confiáveis',
+  docsTrustedSubtitle: 'Protocolos reconhecidos pelo nome e exibidos como Verificado no app. A verificação é baseada no nome — não é uma auditoria de segurança.',
+  docsTrustedNote: 'Todos os outros contratos aparecem como Não verificado. Isso não significa que são inseguros — verifique sempre o endereço do pacote ou programa você mesmo antes de interagir.',
+  docsConceptsTitle: 'Conceitos da blockchain',
+  cSuiPackageTerm: 'Package (pacote)',
+  cSuiPackageDesc: 'Um contrato inteligente implantado na Sui. Pacotes contêm módulos (bibliotecas de funções). Quando o app mostra uma chamada de contrato, exibe o endereço do pacote e o nome do módulo.',
+  cSuiDigestTerm: 'Transaction Digest',
+  cSuiDigestDesc: 'Um identificador único para uma transação Sui — uma string base-58 de 44 caracteres. É o que você cola para buscar uma transação.',
+  cSuiObjectTerm: 'Objeto',
+  cSuiObjectDesc: 'O primitivo de dados principal da Sui. Tudo na Sui — tokens, NFTs, posições de liquidez, recibos — é um objeto com ID único e um proprietário.',
+  cSuiGasTerm: 'Gás e Armazenamento',
+  cSuiGasDesc: 'A Sui cobra gás pela computação e um depósito de armazenamento reembolsável para novos objetos. Quando os objetos são deletados, o depósito é devolvido ao remetente.',
+  cSolProgramTerm: 'Program (programa)',
+  cSolProgramDesc: 'O termo da Solana para contrato inteligente. Programas são stateless e identificados pelo endereço (ex: Jupiter: JUP6Lb…). Equivalente a um package da Sui.',
+  cSolSignatureTerm: 'Signature (assinatura)',
+  cSolSignatureDesc: 'O identificador de transação na Solana — uma string base-58 de 87–88 caracteres. Equivalente ao digest da Sui. É o que você cola para buscar uma transação.',
+  cSolAccountTerm: 'Account (conta)',
+  cSolAccountDesc: 'A Solana armazena todo o estado em contas. Cada carteira, saldo de token e dado de programa é uma conta. Contas de token são separadas das contas de carteira.',
+  cSolLamportTerm: 'Lamport',
+  cSolLamportDesc: 'A menor unidade do SOL (1 SOL = 1.000.000.000 lamports). As taxas são pagas em lamports e queimadas permanentemente — sem reembolso.',
+  cSolInstructionTerm: 'Instruction (instrução)',
+  cSolInstructionDesc: 'Uma única operação dentro de uma transação Solana. Uma transação pode conter múltiplas instruções chamando diferentes programas em sequência.',
 }
 
 const es: Translations = {
@@ -641,6 +712,29 @@ const es: Translations = {
   docsSolanaP1: 'Las transacciones de Solana se identifican por una firma en base-58 (87–88 caracteres). Pégala directamente o usa una URL de Solscan o Solana Explorer.',
   docsSolanaP2: 'El gas en Solana es una comisión fija en SOL que se quema — no hay depósito de almacenamiento ni reembolso. Los resultados netos muestran solo los cambios de saldo en SOL y tokens SPL de tu billetera.',
   docsFooter: '©2026 Kmino · Datos de RPC público de Sui y Solana mainnet',
+  docsBack: 'Volver',
+  docsTrustedTitle: 'Protocolos de confianza',
+  docsTrustedSubtitle: 'Protocolos reconocidos por nombre y mostrados como Verificado en la app. La verificación es por nombre — no es una auditoría de seguridad.',
+  docsTrustedNote: 'Todos los demás contratos aparecen como No verificado. Eso no significa que sean inseguros — verifica siempre la dirección del paquete o programa antes de interactuar.',
+  docsConceptsTitle: 'Conceptos de blockchain',
+  cSuiPackageTerm: 'Package (paquete)',
+  cSuiPackageDesc: 'Un contrato inteligente desplegado en Sui. Los paquetes contienen módulos (bibliotecas de funciones). Cuando la app muestra una llamada de contrato, muestra la dirección del paquete y el nombre del módulo.',
+  cSuiDigestTerm: 'Transaction Digest',
+  cSuiDigestDesc: 'Un identificador único para una transacción de Sui — una cadena base-58 de 44 caracteres. Es lo que pegas para buscar una transacción.',
+  cSuiObjectTerm: 'Objeto',
+  cSuiObjectDesc: 'El primitivo de datos principal de Sui. Todo en Sui — tokens, NFTs, posiciones de liquidez, recibos — es un objeto con un ID único y un propietario.',
+  cSuiGasTerm: 'Gas y Almacenamiento',
+  cSuiGasDesc: 'Sui cobra gas por cómputo y un depósito de almacenamiento reembolsable para nuevos objetos. Cuando los objetos se eliminan, el depósito se devuelve al remitente.',
+  cSolProgramTerm: 'Program (programa)',
+  cSolProgramDesc: 'El término de Solana para contrato inteligente. Los programas son stateless y se identifican por su dirección (p.ej. Jupiter: JUP6Lb…). Equivalente a un package de Sui.',
+  cSolSignatureTerm: 'Signature (firma)',
+  cSolSignatureDesc: 'El identificador de transacción en Solana — una cadena base-58 de 87–88 caracteres. Equivalente al digest de Sui. Es lo que pegas para buscar una transacción.',
+  cSolAccountTerm: 'Account (cuenta)',
+  cSolAccountDesc: 'Solana almacena todo el estado en cuentas. Cada billetera, saldo de token y dato de programa es una cuenta. Las cuentas de token son independientes de las cuentas de billetera.',
+  cSolLamportTerm: 'Lamport',
+  cSolLamportDesc: 'La unidad mínima de SOL (1 SOL = 1.000.000.000 lamports). Las comisiones se pagan en lamports y se queman permanentemente — sin reembolso.',
+  cSolInstructionTerm: 'Instruction (instrucción)',
+  cSolInstructionDesc: 'Una única operación dentro de una transacción de Solana. Una transacción puede contener múltiples instrucciones que llaman a diferentes programas en secuencia.',
 }
 
 export const allTranslations: Record<Language, Translations> = { en, 'pt-BR': ptBR, es }
