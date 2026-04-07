@@ -33,6 +33,7 @@ export interface Translations {
   cardSends: string
   cardReceives: string
   cardTxFailed: string
+  cardInteractsWithContract: string
   // ── Narrative templates ─────────────────────────────────────────────────────
   narrativeFailed: (sender: string) => string
   narrativeFailedOutcome: string
@@ -200,6 +201,7 @@ const en: Translations = {
   cardSends: 'sends',
   cardReceives: 'receives',
   cardTxFailed: 'transaction failed',
+  cardInteractsWithContract: 'interacts with contract',
   // Narratives
   narrativeFailed: (s) => `{{${s}}} attempted a transaction that did not succeed. No assets were moved.`,
   narrativeFailedOutcome: 'No changes — transaction reverted',
@@ -388,6 +390,7 @@ const ptBR: Translations = {
   cardSends: 'envia',
   cardReceives: 'recebe',
   cardTxFailed: 'transação falhou',
+  cardInteractsWithContract: 'interage com contrato',
   // Narratives
   narrativeFailed: (s) => `{{${s}}} tentou realizar uma transação que não foi concluída. Nenhum ativo foi movido.`,
   narrativeFailedOutcome: 'Sem alterações — transação revertida',
@@ -576,6 +579,7 @@ const es: Translations = {
   cardSends: 'envía',
   cardReceives: 'recibe',
   cardTxFailed: 'transacción fallida',
+  cardInteractsWithContract: 'interactúa con contrato',
   // Narratives
   narrativeFailed: (s) => `{{${s}}} intentó una transacción que no tuvo éxito. No se movió ningún activo.`,
   narrativeFailedOutcome: 'Sin cambios — transacción revertida',

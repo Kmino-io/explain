@@ -323,14 +323,12 @@ function WalletCard({ label, isError, content, linkUrl, roleLabel, trust, t }: {
         </span>
       )}
 
-      {content.type === 'wallet-action' && (
-        <>
-          <div className={`${th.bgAccentHalf} rounded-[48px] px-3 py-1 shrink-0 max-w-full`}>
-            <span className="text-[10px] text-white tracking-[-0.16px] leading-[1.3] block truncate max-w-[180px]" style={mono}>
-              {content.actionLabel}
-            </span>
-          </div>
-        </>
+      {content.type === 'wallet-action' && content.actionLabel && (
+        <div className={`${th.bgAccentHalf} rounded-[48px] px-3 py-1 shrink-0 max-w-full`}>
+          <span className="text-[10px] text-white tracking-[-0.16px] leading-[1.3] block truncate max-w-[180px]" style={mono}>
+            {content.actionLabel}
+          </span>
+        </div>
       )}
 
       {content.type === 'protocol' && (
@@ -742,7 +740,7 @@ type DiagramSpec = {
   receiverTrust?: TrustLevel
 }
 
-function buildDiagram(tx: ParsedTransaction): DiagramSpec {
+function buildDiagram(tx: ParsedTransaction, interactsLabel: string): DiagramSpec {
   const wallets = Array.from(tx.userAddressMap.entries())
   const senderEntry = wallets.find(([, addr]) => addr === tx.sender) ?? wallets[0]
   const senderLabel = senderEntry?.[0] ?? 'Wallet A'
@@ -913,7 +911,7 @@ function buildDiagram(tx: ParsedTransaction): DiagramSpec {
     return {
       senderContent: {
         type: 'wallet-action',
-        actionLabel: firstCall ? humanizeFunctionName(firstCall.function ?? '') : 'contract call',
+        actionLabel: (firstCall && humanizeFunctionName(firstCall.function ?? '')) || interactsLabel,
       },
       receiverContent: {
         type: 'protocol',
@@ -1107,7 +1105,7 @@ export function TransactionDisplay({
   const {
     senderContent, receiverContent, receiverLabel, arrowSrc, senderLink, receiverLink, receiverRole, receiverTrust,
     middleContent, middleLabel, middleLink, middleRole, middleTrust,
-  } = buildDiagram(transaction)
+  } = buildDiagram(transaction, t.cardInteractsWithContract)
 
   const steps = transaction.narrative.steps
   const hasSteps = steps && steps.length > 1 && showSteps(transaction.category)
